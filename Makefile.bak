@@ -1,0 +1,49 @@
+# Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+# Multiscalar Project.  ALL RIGHTS RESERVED.
+#
+# This software is furnished under the Multiscalar license.
+# For details see the LICENSE.mscalar file in the top-level source
+# directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+#
+# $Id: Makefile,v 1.1.1.1.10.6 2005/11/14 18:03:18 pwells Exp $
+
+MODULE_DIR = ms2sim_smt
+MODULE_NAME = ms2sim_smt
+
+MODULE_CFLAGS = -DTARGET_SPARC_V9 -Wall -g -O0
+#MODULE_CFLAGS = -DTARGET_SPARC_V9 -Wall  -O3
+MODULE_LDFLAGS = 
+MODULE_CLASSES = ms2sim
+
+SRC_FILES = 
+# Include source definitions
+#include $(SRC_BASE)/$(MODULE_DIR)/power/Makefile.sources
+include $(SRC_BASE)/$(MODULE_DIR)/mem-hier/Makefile.sources
+include $(SRC_BASE)/$(MODULE_DIR)/common/Makefile.sources
+#include $(SRC_BASE)/$(MODULE_DIR)/processor/Makefile.sources
+
+PROCESSOR_VPATH = $(SRC_BASE)/$(MODULE_DIR)/processor:$(SRC_BASE)/$(MODULE_DIR)/processor/csp_alg
+
+SRC_FILES += dynamic.cc iwindow.cc mai.cc mai_instr.cc \
+             chip.cc sequencer.cc startup.cc fu.cc \
+             isa.cc yags.cc cascade.cc ctrl_flow.cc ras.cc lsq.cc \
+             st_buffer.cc mem_xaction.cc v9_mem_xaction.cc \
+             wait_list.cc fetch_buffer.cc \
+             mem_hier_handle.cc proc_stats.cc eventq.cc\
+             fastsim.cc mmu.cc thread_scheduler.cc thread_context.cc \
+			 disambig.cc csp_alg.cc base_alg.cc tsp_alg.cc ssp_alg.cc esp_alg.cc  \
+			 msp_alg.cc shb.cc disable_timer.cc os_alg.cc hybrid_alg.cc \
+			 func_alg.cc heatrun_alg.cc servc_alg.cc
+			 
+
+
+
+
+EXTRA_VPATH = $(COMMON_VPATH):$(PROCESSOR_VPATH):$(MEMHIER_VPATH):$(POWER_VPATH)
+EXTRA_VPATH = $(COMMON_VPATH):$(PROCESSOR_VPATH):$(MEMHIER_VPATH)
+
+include $(MODULE_MAKEFILE)
+
+# Force object's dependence on these files too
+# $(OBS): common/Makefile.sources processor/Makefile.sources power/Makefile.sources mem-hier/Makefile.sources
+

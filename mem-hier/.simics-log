@@ -1,0 +1,9 @@
+# '.simics-log':
+# Simics simics-2.0.16 (Sat Jul 10 20:12:56 CEST 2004)
+#
+# Note: Simics logs all commands, even incorrect ones and comments.
+# This file can be used as a script using the -x flag, in which
+# case there will be multiple headers. You can override the creation
+# of this file with the -no-log flag.
+#
+# Running on emperor03.cs.wisc.edu (Linux 2.4.21-27.0.1.TLsmp i686)

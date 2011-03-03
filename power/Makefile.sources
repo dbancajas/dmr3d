@@ -1,0 +1,31 @@
+# Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+# Multiscalar Project.  ALL RIGHTS RESERVED.
+#
+# This software is furnished under the Multiscalar license.
+# For details see the LICENSE.mscalar file in the top-level source
+# directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+#
+# $Id: Makefile.sources,v 1.5.2.12 2006/08/18 14:30:18 kchak Exp $
+# List of source file for processor
+
+
+CACTI_VPATH = $(MODULE_DIR)/power/cacti
+HOTSPOT_VPATH = $(MODULE_DIR)/power/hotspot
+POWER_VPATH = $(MODULE_DIR)/power:$(CACTI_VPATH):$(HOTSPOT_VPATH)
+
+MODULE_CFLAGS += -DPOWER_COMPILE
+HOTSPOT_SRCS = flp.cc flp_desc.cc npe.cc shape.cc \
+				temperature.cc RCutil.cc \
+				temperature_grid.cc Grids.cpp FBlocks.cc \
+				util.cc wire.cc temperature_block.cc \
+				hotspot_interface.cc
+CACTI_SRCS = area.cc cacti_time.cc leakage.cc
+SRC_FILES += power_obj.cc power_profile.cc  \
+			 circuit_param.cc area_param.cc \
+			 basic_circuit.cc power_util.cc \
+			 core_power.cc \
+			 cache_power.cc sparc_regfile.cc \
+			 $(CACTI_SRCS) $(HOTSPOT_SRCS)
+			 
+
+

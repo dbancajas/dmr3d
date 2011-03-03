@@ -1,0 +1,287 @@
+/* Copyright (c) 2005 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ *
+ */
+
+/* $Id $
+ *
+ * description: Base Algorithm to work with num_threads > num_ctxt    
+ * initial author: Koushik Chakraborty 
+ *
+*/
+
+#include "simics/first.h"
+RCSID("$Id: tsp_alg.cc,v 1.1.2.3 2006/02/14 15:56:31 kchak Exp $");
+
+#include "definitions.h"
+#include "isa.h"
+#include "proc_stats.h"
+#include "chip.h"
+#include "stats.h"
+#include "counter.h"
+#include "mai_instr.h"
+#include "sequencer.h"
+#include "verbose_level.h"
+#include "config_extern.h"
+#include "histogram.h"
+#include "mai.h"
+#include "sequencer.h"
+
+#include "thread_scheduler.h"
+#include "csp_alg.h"
+#include "tsp_alg.h"
+
+tsp_algorithm_t::tsp_algorithm_t(string name, hw_context_t **hwc,
+   thread_scheduler_t *_t_sched, chip_t *_p, uint32 _num_thr, uint32 _num_ctxt) :
+    csp_algorithm_t(name, hwc, _t_sched, _p, _num_thr, _num_ctxt)
+{
+    preferred_user_ctxt = new uint32[num_threads];
+    preferred_os_ctxt   = new uint32[num_threads];
+    
+    uint32 curr_ctxt = 0;
+    for (uint32 i = 0; i < num_threads; i++)
+    {
+        preferred_user_ctxt[i] = curr_ctxt++;
+        if (curr_ctxt == g_conf_num_user_seq) curr_ctxt = 0;
+    }
+    curr_ctxt = g_conf_num_user_seq;
+    for (uint32 i = 0; i < num_threads; i++)
+    {
+        preferred_os_ctxt[i] = curr_ctxt++;
+        if (curr_ctxt == num_ctxt) curr_ctxt = g_conf_num_user_seq;
+    }
+    
+    last_os_mapping_switch = 100;
+    last_user_mapping_switch = 100;
+    next_os_thread_switch = 0;
+    next_user_thread_switch = 0;
+    if (g_conf_num_user_seq) {
+        require_os_hop = (num_threads % (num_ctxt - g_conf_num_user_seq) != 0);
+        require_user_hop = (num_threads % g_conf_num_user_seq != 0);
+    } else {
+        require_os_hop = false;
+        require_user_hop = false;
+    }
+    
+    for (uint32 i = 0; i < num_ctxt; i++)
+        p->switch_to_thread(hw_context[i]->seq, hw_context[i]->ctxt, p->get_mai_object(i));
+    
+}
+
+
+mai_t * tsp_algorithm_t::find_thread_for_ctxt(hw_context_t *ctxt, 
+    bool user_ctxt)
+{
+    mai_t *ret = 0;
+    if (user_ctxt && !wait_for_user.empty())
+    {
+        list<mai_t *>::iterator it = wait_for_user.begin();
+        while (it != wait_for_user.end())
+        {
+            mai_t *candidate = *it;
+            if (ctxt == hw_context [preferred_user_ctxt [candidate->get_id()] ])
+            {
+                ret = candidate;
+                wait_for_user.erase(it);
+                break;
+            }
+            it++;
+        }
+    } else if (!user_ctxt && !wait_for_os.empty()) {
+        list<mai_t *>::iterator it = wait_for_os.begin();
+        while (it != wait_for_os.end())
+        {
+            mai_t *candidate = *it;
+            if (ctxt == hw_context [preferred_os_ctxt [candidate->get_id()] ])
+            {
+                ret = candidate;
+                wait_for_user.erase(it);
+                break;
+            }
+            it++;
+        }   
+    }
+    
+    if (!ret) {
+        ASSERT(ctxt->busy);
+        ctxt->busy = false;
+        if (user_ctxt) idle_user_ctxt.push_back(ctxt);
+        else idle_os_ctxt.push_back(ctxt);
+    }
+    
+    return ret;
+}
+ 
+hw_context_t *tsp_algorithm_t::find_ctxt_for_thread(mai_t *thread, 
+    bool desire_user_ctxt, uint32 syscall)
+{
+    hw_context_t *ret = 0;
+    if (!desire_user_ctxt)
+    {
+        hw_context_t *preferred = get_preferred_os_context(thread->get_id());
+        if (!preferred->busy) 
+        {
+            ASSERT(find(idle_os_ctxt.begin(), idle_os_ctxt.end(), preferred)
+                    != idle_os_ctxt.end());
+            ret = preferred;
+            idle_os_ctxt.remove(preferred);
+        }
+        
+    } else {
+        hw_context_t *preferred = get_preferred_user_context(thread->get_id());
+        if (!preferred->busy) 
+        {
+            ASSERT(find(idle_user_ctxt.begin(), idle_user_ctxt.end(), preferred)
+                    != idle_user_ctxt.end());
+            ret = preferred;
+            idle_user_ctxt.remove(preferred);
+        }
+    }
+    
+    if (!ret) {
+        if (desire_user_ctxt) wait_for_user.push_back(thread);
+        else wait_for_os.push_back(thread);
+    } else 
+        ret->busy = true;
+            
+    return ret;
+    
+}
+   
+bool tsp_algorithm_t::thread_yield(sequencer_t *seq, uint32 ctxt, mai_t *mai, 
+    ts_yield_reason_t why)
+	
+{
+    // TODO --------- MUST READ
+    // Must check what thread yield returns. If we are returning
+    // don't yield because there is no other thread to run
+    // then, we must make sure that we pre-empt this thread as soon
+    // as a new thread becomes ready to run on the same sequencer.
+    return csp_algorithm_t::thread_yield(seq, ctxt, mai, why);
+}
+        
+       
+void tsp_algorithm_t::read_checkpoint(FILE *file)
+{
+    csp_algorithm_t::read_checkpoint(file);
+    fscanf(file, "%llu %llu %u %u\n", &last_user_mapping_switch,
+      &last_os_mapping_switch, &next_user_thread_switch, &next_os_thread_switch);
+    
+}
+    
+       
+void tsp_algorithm_t::write_checkpoint(FILE *file)
+{
+    csp_algorithm_t::write_checkpoint(file);
+    fprintf(file, "%llu %llu %u %u\n", last_user_mapping_switch,
+      last_os_mapping_switch, next_user_thread_switch, next_os_thread_switch);
+    
+}
+    
+    
+
+hw_context_t *tsp_algorithm_t::get_preferred_user_context(uint32 t_id)
+{
+    if (!require_user_hop) return hw_context[preferred_user_ctxt[t_id]];
+    tick_t curr_cycle = p->get_g_cycles();
+    if (curr_cycle > last_user_mapping_switch &&
+        (curr_cycle - last_user_mapping_switch) > (uint32)g_conf_thread_hop_interval)
+    {
+        uint32 num_hops = get_num_hops(g_conf_num_user_seq);
+        for (uint32 i = 0; i < num_hops; i++)
+        {
+            uint32 home = preferred_user_ctxt[next_user_thread_switch];
+            preferred_user_ctxt[next_user_thread_switch] = (home + num_hops) % g_conf_num_user_seq;
+            next_user_thread_switch = (next_user_thread_switch + 1) % num_threads;
+        }
+        last_user_mapping_switch = curr_cycle;
+    }
+    for (uint32 i = 0; i < num_threads; i++)
+        ASSERT(preferred_user_ctxt[i] < g_conf_num_user_seq);
+    
+    return hw_context[preferred_user_ctxt[t_id]];
+}
+
+
+hw_context_t *tsp_algorithm_t::get_preferred_os_context(uint32 t_id)
+{
+ 
+    if (!require_os_hop) return hw_context[preferred_os_ctxt[t_id]];
+    uint32 ctxt  = 0;
+    tick_t curr_cycle = p->get_g_cycles();
+     if (curr_cycle > last_os_mapping_switch &&
+        (curr_cycle - last_os_mapping_switch > (uint32)g_conf_thread_hop_interval)) {
+        uint32 num_hops = get_num_hops(num_ctxt - g_conf_num_user_seq);
+        for (uint32 i = 0; i < num_hops; i++)
+        {
+            uint32 home = preferred_os_ctxt[next_os_thread_switch];
+            uint32 residual = (home + num_hops) % num_ctxt;
+            preferred_os_ctxt[next_os_thread_switch] = (home + num_hops >= num_ctxt) 
+                ? g_conf_num_user_seq + residual: (home + num_hops) ;
+            next_os_thread_switch = (next_os_thread_switch + 1) % num_threads;
+        }
+        last_os_mapping_switch = curr_cycle;
+    }
+    
+    for (uint32 i = 0; i < num_threads; i++)
+        ASSERT(preferred_os_ctxt[i] >= g_conf_num_user_seq &&
+               preferred_os_ctxt[i] < num_ctxt);
+    
+    ctxt = preferred_os_ctxt[t_id];
+    return hw_context[ctxt];
+}
+
+    
+
+uint32 tsp_algorithm_t::get_num_hops(uint32 resources)
+{
+    // Assume that number of threads == 8
+    switch(resources) {
+        case 3:
+            return 2;
+            break;
+        case 5:
+            return 3;
+            break;
+        case 6:
+            return 2;
+            break;
+        case 7:
+            return 1;
+            break;
+        default:
+            FAIL;
+    }
+    
+}
+
+
+    
+
+void tsp_algorithm_t::silent_switch(sequencer_t *seq, uint32 ctxt, mai_t *mai)
+{
+	bool desire_user_ctxt = !mai->is_supervisor();  // may == user_seq if preemted
+
+	FE_EXCEPTION_CHECK;
+	// find idle seq, or put thread on idle list
+    hw_context_t *preferred_ctxt = 0;
+    
+    if (desire_user_ctxt)
+    {
+        preferred_ctxt = get_preferred_user_context(mai->get_id());
+        
+    } else {
+        // Assume single mapping;
+        preferred_ctxt = get_preferred_os_context(mai->get_id());
+    }
+    
+    seq->set_mem_hier_seq(preferred_ctxt->seq, ctxt);
+    
+}
+
+
+

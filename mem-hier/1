@@ -1,0 +1,10 @@
+Message Type changes
+CVS: ----------------------------------------------------------------------
+CVS: Enter Log.  Lines beginning with `CVS:' are removed automatically
+CVS: 
+CVS: Committing in protocols
+CVS: 
+CVS: Modified Files:
+CVS:  Tag: b_memhier_dev
+CVS: 	messages.cc simple_proc_msg.h 
+CVS: ----------------------------------------------------------------------

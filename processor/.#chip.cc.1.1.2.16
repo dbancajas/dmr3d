@@ -1,0 +1,547 @@
+/* Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ *
+ */
+
+#include "simics/first.h"
+RCSID("$Id: chip.cc,v 1.1.2.16 2006/02/01 21:09:02 kchak Exp $");
+
+#include "definitions.h"
+#include "window.h"
+#include "iwindow.h"
+#include "sequencer.h"
+#include "mai.h"
+#include "chip.h"
+#include "mem_hier_handle.h"
+#include "fastsim.h"
+#include "thread_scheduler.h"
+
+#include "counter.h"
+#include "histogram.h"
+#include "stats.h"
+#include "proc_stats.h"
+#include "config_extern.h"
+#include "config.h"
+#include "mmu.h"
+#include "thread_context.h"
+#include "mem_driver.h"
+#include "mem_hier.h"
+
+chip_t::chip_t (conf_object_t *_cpus[], uint32 _num_cpus, string &_c) {
+
+	num_cpus = _num_cpus;
+	set_config (_c);
+
+	// order important.
+
+	config_db = new config_t ();
+	config_db->register_entries ();
+
+	if (!get_config ().empty ()) 
+		config_db->parse_runtime (get_config ());
+
+	//config_db->print ();	
+
+    cpus = _cpus;
+    mem_hier = NULL;
+    mem_driver = NULL;
+	initialized = false;
+}
+
+
+void chip_t::init() {
+	
+	num_seq = num_cpus + g_conf_extra_seq;
+    mai = new mai_t *[num_cpus];
+    fastsim = new fastsim_t *[num_cpus];
+
+	seq = new sequencer_t *[num_seq];
+
+    t_ctxt = new thread_context_t *[num_cpus];
+    
+	for (uint32 i = 0; i < num_cpus; i++) {
+		mai[i] = new mai_t (cpus[i], this);
+        if (!g_conf_use_processor) SIM_stall_cycle(cpus[i], 0);
+		fastsim[i] = new fastsim_t(cpus[i]);
+        t_ctxt[i] = new thread_context_t (i);
+	}
+    
+    if (g_conf_chip_design[0])
+    {
+        // Chip with SMT cores!
+        num_seq = g_conf_chip_design[0];
+        uint32 tid_offset = 0;
+        for (uint32 i = 0; i < num_seq; i++)
+        {
+            uint32 ctxts = g_conf_chip_design[i + 1];
+            uint32 t_ids[ctxts];
+            for (uint32 j = 0; j < ctxts; j++)
+            {
+                if (tid_offset + j < num_cpus)
+                    t_ids[j] = t_ctxt[tid_offset + j]->get_id();
+                else
+                    t_ids[j] = num_cpus;
+            
+            }
+            seq[i] = new sequencer_t(this, i, t_ids, ctxts);
+        }
+    } else {
+        num_seq = num_cpus;
+        uint32 t_ids[1];
+        
+        for (uint32 i = 0; i < num_seq; i++)
+        {
+            t_ids[0] = i;
+            seq[i] = new sequencer_t (this, i, t_ids, 1);
+            t_ctxt[i]->set_sequencer(seq[i]);
+            t_ctxt[i]->set_seq_ctxt(0);
+            
+        }
+        
+    }
+    
+    
+    
+    generate_tstats_list ();
+
+	g_cycles = 1;
+
+	// if checkpoint is inside a trap
+	for (uint32 i = 0; i < num_cpus; i++) {
+		if (mai[i]->get_tl ()) {
+			for (uint32 tl = 1; tl <= mai[i]->get_tl (); tl++) 
+				mai[i]->setup_trap_context ();
+		}
+	}
+	
+	//mmu = new mmu_t (this);   
+
+	scheduler = new thread_scheduler_t(this); 
+ 
+	initialized = true;
+}
+
+chip_t::~chip_t (void) {
+	delete seq;
+	delete mai;
+	delete [] tstats_list;
+	// todo delete rest
+}
+
+void 
+chip_t::advance_cycle () {
+
+	for (uint32 i = 0; i < num_seq ; i++) {
+		seq[i]->advance_cycle ();
+	}
+	g_cycles++;
+    
+    
+	
+	
+	for (uint32 i = 0; i < num_cpus ; i++) {
+		proc_stats_t *tstats = get_tstats (i);
+        STAT_INC (tstats->stat_cycles);
+		if (!t_ctxt[i]->get_sequencer()) {
+			STAT_INC (tstats->stat_idle_context_cycles);
+			
+			if (g_conf_csp_stop_tick)
+				mai[i]->restore_tick_reg();
+		}
+	}
+    
+    handle_simulation();
+}
+
+
+void
+chip_t::handle_simulation()
+{
+    uint64 total_commits  = 0;
+    for (uint32 i = 0; i < num_cpus; i++)
+    {
+        proc_stats_t **tstat_l = get_tstats_list(i);
+        total_commits += STAT_GET(tstat_l[0]->stat_commits);
+        if (g_conf_kernel_stats) 
+            total_commits += STAT_GET(tstat_l[1]->stat_commits);
+    }
+    
+    if (g_conf_run_cycles && 
+        g_cycles == (uint64) g_conf_run_cycles) {
+        
+        //structure_stats ();
+        print_stats ();
+        mem_hier->print_stats();
+        mai[0]->break_sim (0);
+    }
+    
+    if (g_conf_run_commits && 
+        total_commits >= (uint64) g_conf_run_commits) {
+        
+        print_stats ();
+        mem_hier->print_stats();
+        mai[0]->break_sim (0);
+    }
+    
+}
+
+
+sequencer_t*
+chip_t::get_sequencer (uint32 sequencer_id) {
+	return seq[sequencer_id];
+}
+
+mai_t*
+chip_t::get_mai_object (uint32 cpu_id) {
+    if (cpu_id < num_cpus)
+        return mai[cpu_id];
+    else 
+        return NULL;
+}
+
+mai_t *
+chip_t::get_mai_from_thread(uint32 tid)
+{
+    return mai[tid];
+}
+
+fastsim_t*
+chip_t::get_fastsim (uint32 thread_id) {
+    ASSERT(thread_id < num_cpus);
+    return fastsim[thread_id];
+}
+
+tick_t
+chip_t::get_g_cycles () {
+	return g_cycles;
+}
+
+proc_stats_t*
+chip_t::get_tstats (uint32 thread_id) {
+	ASSERT (tstats_list);
+
+	if (thread_id >= num_cpus)
+		return NULL;
+    
+	mai_t *maiobj = get_mai_object(thread_id);
+	if (g_conf_kernel_stats && maiobj && maiobj->is_supervisor ()) 
+		return tstats_list[thread_id][1];
+	else
+		return tstats_list[thread_id][0];
+}
+
+proc_stats_t**
+chip_t::get_tstats_list (uint32 thread_id) {
+	return tstats_list[thread_id];
+}
+
+void
+chip_t::generate_tstats_list () {
+
+	tstats_list = new proc_stats_t ** [num_cpus];
+
+	for (uint32 s = 0; s < num_cpus; s++) {
+
+		if (g_conf_kernel_stats) 
+			tstats_list[s] = new proc_stats_t * [3];
+		else
+			tstats_list[s] = new proc_stats_t * [2];
+
+		char name[32];
+		sprintf(name, "thread_stats%u", s);
+
+		uint32 p = 0;
+		tstats_list[s][p++] = new proc_stats_t (string(name));
+		
+		if (g_conf_kernel_stats) {
+			sprintf(name, "kthread_stats%u", s);
+			tstats_list[s][p++] = new proc_stats_t (string(name));
+		}
+		
+		tstats_list[s][p] = 0;
+	}
+}
+
+bool
+chip_t::ready_for_checkpoint() 
+{
+	for (uint32 s = 0; s < num_seq; s++) {
+		if (!seq[s]->ready_for_checkpoint())
+			return false;
+	}
+	return true;
+}
+
+void
+chip_t::set_interrupt (uint32 thread_id, int64 vector) {
+
+	if (vector) {
+        mai[thread_id]->set_interrupt(vector);
+     //   DEBUG_OUT("cpu %u got interrupt @ %llu\n", thread_id, g_cycles);
+    }
+    if (t_ctxt[thread_id]->get_sequencer() == NULL) {
+        // Need to yield the current VCPU and 
+        // allow this thread to run for early handling of the interrupt
+        //sequencer_t *seq = scheduler->handle_interrupt_thread(thread_id);
+        // TODO SMT
+        //DEBUG_OUT("Early interrupt handling for thread %u vector %llx @ %llu\n",
+        //    thread_id, vector, g_cycles);
+        //seq->potential_thread_switch(0, YIELD_PAUSED_THREAD_INTERRUPT);
+    }
+}
+
+/*
+void 
+chip_t::set_shadow_interrupt (int64 vector) {
+	ASSERT (seq);
+	seq->set_shadow_interrupt (vector);
+}
+*/
+
+void
+chip_t::set_config (string &c) {
+	config = c;
+}
+
+string
+chip_t::get_config (void) {
+	return config;
+}
+
+config_t *
+chip_t::get_config_db (void) {
+	return config_db;
+}
+
+void
+chip_t::set_mem_hier (mem_hier_handle_t *_mem_hier) {
+	ASSERT (_mem_hier);
+	mem_hier = _mem_hier;
+}
+
+mem_hier_handle_t*
+chip_t::get_mem_hier (void) {
+	return mem_hier;
+}
+
+void
+chip_t::print_stats () {
+	for (uint32 s = 0; s < num_seq; s++)
+		seq[s]->print_stats();
+
+	for (uint32 s = 0; s < num_cpus; s++) {
+		uint32 i = 0;
+		while (tstats_list[s][i] != 0) {
+			tstats_list[s][i]->print ();
+
+			i++;
+		}
+	}
+}
+
+void
+chip_t::stall_front_end()
+{
+	for (uint32 i = 0; i < num_cpus; i++)
+    {
+        if (t_ctxt[i]->get_sequencer())
+            t_ctxt[i]->get_sequencer()->prepare_for_checkpoint(t_ctxt[i]->get_seq_ctxt());
+    }
+}
+
+void
+chip_t::print_stats (proc_stats_t *pstats) {
+
+}
+
+mmu_t *
+chip_t::get_mmu (uint32 thread_id) {
+	FAIL;
+	return NULL;
+}
+
+void
+chip_t::write_checkpoint(FILE *file) 
+{
+	fprintf(file, "%llu\n", g_cycles);
+	
+    int32 seq_id;
+    // thread context
+    for (uint32 i = 0; i < num_cpus; i++)
+    {
+        seq_id = t_ctxt[i]->get_sequencer() ? (int32)t_ctxt[i]->get_sequencer()->get_id() :
+            -1;
+        fprintf(file, "%d %u\n", seq_id, t_ctxt[i]->get_seq_ctxt());   
+    }
+    
+    
+	for (uint32 s = 0; s < num_cpus; s++) {
+		uint32 i = 0;
+		while (tstats_list[s][i] != 0) {
+			tstats_list[s][i]->stats->to_file(file);
+			i++;
+		}
+	}
+	
+	for (uint32 i = 0; i < num_cpus; i++)
+		mai[i]->write_checkpoint(file);
+	for (uint32 i = 0; i < num_seq; i++)
+		seq[i]->write_checkpoint(file);
+    
+    scheduler->write_checkpoint(file);
+}
+
+void
+chip_t::read_checkpoint(FILE *file)
+{
+    // Check pointing need to be fixed
+	fscanf(file, "%llu\n", &g_cycles);
+   
+    uint32 seq_ctxt;
+    int32 seq_id;
+	for (uint32 i = 0; i < num_cpus; i++)
+    {
+        fscanf(file, "%d %u\n", &seq_id, &seq_ctxt);
+        if (seq_id >= 0) {
+            t_ctxt[i]->set_sequencer(seq[seq_id]);
+            t_ctxt[i]->set_seq_ctxt(seq_ctxt);
+            if (!g_conf_use_processor) mem_driver->release_proc_stall(i);
+        } else {
+            t_ctxt[i]->set_sequencer(NULL);
+            if (!g_conf_use_processor) mem_driver->stall_thread(i);
+        }
+    }
+	
+	for (uint32 s = 0; s < num_cpus; s++) {
+		uint32 i = 0;
+		while (tstats_list[s][i] != 0) {
+			tstats_list[s][i]->stats->from_file(file);
+			i++;
+		}
+	}
+
+	for (uint32 i = 0; i < num_cpus; i++)
+		mai[i]->read_checkpoint(file);
+	for (uint32 i = 0; i < num_seq; i++)
+		seq[i]->read_checkpoint(file);
+
+    scheduler->read_checkpoint(file);
+    
+    DEBUG_OUT("Setting Cycles to %llu\n", g_cycles);
+}
+
+sequencer_t *
+chip_t::get_sequencer_from_thread(uint32 thread_id)
+{
+    return t_ctxt[thread_id]->get_sequencer();
+}
+
+uint32
+chip_t::get_num_sequencers()
+{
+	return num_seq;
+}
+
+uint32
+chip_t::get_num_cpus()
+{
+	return num_cpus;
+}
+
+thread_scheduler_t *
+chip_t::get_scheduler()
+{
+	return scheduler;
+}
+
+void
+chip_t::switch_to_thread(sequencer_t *seq, uint32 ctxt, mai_t *thread)
+{
+	ASSERT(seq);
+	
+	int32 thread_id = thread ? thread->get_id() : -1; 
+	
+    //	DEBUG_OUT("switch: seq%d to thread%d\n", seq->get_id(), thread_id);
+    
+    if (thread) {
+        t_ctxt[thread_id]->set_sequencer(seq);
+        t_ctxt[thread_id]->set_seq_ctxt(ctxt);
+    }
+    seq->switch_to_thread(thread, ctxt, !initialized);
+    
+}
+
+
+uint8 chip_t::get_seq_ctxt(uint32 tid)
+{
+    return t_ctxt[tid]->get_seq_ctxt();
+}
+
+void chip_t::idle_thread_context (uint32 id)
+{
+    t_ctxt[id]->set_sequencer(NULL);
+}
+
+void chip_t::invalidate_address(sequencer_t *_s, invalidate_addr_t *invalid_addr)
+{
+    for (uint32 i = 0; i < num_seq; i++)
+        seq[i]->invalidate_address(_s, invalid_addr);
+}
+
+
+uint64
+chip_t::get_lwp_syscall(uint64 kstack_region)
+{
+    if (kstack_region && lwp_syscall.find(kstack_region) != lwp_syscall.end())
+        return lwp_syscall[kstack_region];
+    return 0;
+}
+
+
+void
+chip_t::set_lwp_syscall(uint64 kstack_region, uint64 syscall)
+{
+   lwp_syscall[kstack_region] = syscall;
+}
+
+
+void chip_t::check_for_thread_yield()
+{
+    if (g_conf_processor_checkpoint_in != "" ) {
+        FILE *fileHandle = fopen(g_conf_processor_checkpoint_in.c_str(), "r");
+        if (fileHandle) {
+            read_checkpoint(fileHandle);
+            fclose(fileHandle);
+        }
+        
+        g_conf_processor_checkpoint_in = "";
+    }
+    
+    g_cycles++;
+    for (uint32 i = 0; i < num_seq; i++) {
+        seq[i]->check_for_thread_switch();
+    }
+    if (g_conf_transaction_leak_interval &&
+        g_cycles % (tick_t) g_conf_transaction_leak_interval == 0)
+        mem_driver->leak_transactions();
+}
+
+void chip_t::set_mem_driver(mem_driver_t *_mem_driver)
+{
+    mem_driver = _mem_driver;
+}
+
+mem_driver_t *chip_t::get_mem_driver()
+{
+    return mem_driver;
+}
+
+void chip_t::handle_mode_change(uint32 thread_id)
+{
+    sequencer_t *seq = t_ctxt[thread_id]->get_sequencer();
+    if (seq) seq->potential_thread_switch(t_ctxt[thread_id]->get_seq_ctxt(), YIELD_PROC_MODE_CHANGE);
+}

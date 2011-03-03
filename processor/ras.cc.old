@@ -1,0 +1,152 @@
+/* Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ *
+ */
+
+#include "simics/first.h"
+RCSID ("$Id: ras.cc,v 1.1.1.1.14.3 2006/08/01 20:00:39 pwells Exp $");
+
+#include "definitions.h"
+#include "ras.h"
+
+ras_state_t::ras_state_t () {
+	clear ();
+}
+
+void 
+ras_state_t::clear () {
+	top = 0; 
+	next_free = 0;
+}
+
+void
+ras_state_t::copy_state (ras_state_t *rs) {
+	top = rs->top;
+	next_free = rs->next_free;
+}
+
+ras_t::ras_t (uint32 bits, uint32 filter_bits) {
+	entries  = 1 << bits;
+	mask     = entries - 1;
+	
+	table    = new (addr_t) [entries];
+	next_top = new (uint32) [entries];
+
+	for (uint32 i = 0; i < entries; i++) {
+		table [i] = 0;
+		next_top [i] = 0;
+	}
+    
+    filter_table_size = 32;
+    filter_tag = new addr_t[filter_table_size];
+    filter_target = new addr_t[filter_table_size];
+	
+	for (uint32 i = 0; i < filter_table_size; i++) {
+		filter_tag [i] = 0;
+		filter_target [i] = 0;
+	}
+}
+
+void
+ras_t::write_checkpoint(FILE *file)
+{
+    for (uint32 i = 0; i < entries; i++)
+        fprintf(file, "%llu %u\n", table[i], next_top[i]);
+}
+
+void
+ras_t::read_checkpoint(FILE *file)
+{
+    for (uint32 i = 0; i < entries; i++) 
+        fscanf(file, "%llu %u\n", &table[i], &next_top[i]);
+}
+
+
+void
+ras_t::push (addr_t return_pc, ras_state_t *rs) {
+    ASSERT (rs->next_free < entries);
+
+	table [rs->next_free] = return_pc;
+	next_top [rs->next_free] = rs->top;
+
+	rs->top = rs->next_free;
+	rs->next_free = increment (rs->next_free);
+}
+
+addr_t
+ras_t::pop (ras_state_t *rs) {
+     ASSERT (rs->top < entries);
+
+	addr_t addr = table [rs->top];
+	rs->top     = next_top [rs->top];
+
+	return addr;
+}
+
+uint32
+ras_t::increment (uint32 a) {
+	return ((a + 1) & mask);
+}
+
+ras_t::~ras_t () {
+	delete [] table;
+	delete [] next_top;
+}
+
+void ras_t::debug(ras_state_t *rs)
+{
+    uint32 index = rs->top;
+    for (uint32 i = 0; i < 32; i++)
+    {
+        DEBUG_OUT("%llx ", table[index]);
+        index = next_top[index];
+    }
+    DEBUG_OUT("\n");
+    
+}
+
+void ras_t:: update_commit (addr_t return_pc)
+{
+    
+}
+
+void ras_t::fix_state(ras_state_t *rs, uint32 level, addr_t NPC)
+{
+    // shouldn't do anything
+    return;
+    uint32 index = rs->top;
+    for (uint32 i = 0; i < level; i++)
+    {
+        if (table[index] == NPC) {
+            rs->top = next_top[index];
+            break;
+        }
+        index = next_top[index];
+    }
+}
+
+       
+addr_t ras_t::filter_pc (addr_t PC)
+{
+    uint32 index = PC % filter_table_size;
+    if (filter_tag[index] == PC)
+        return filter_target[index];
+        
+    return 0;
+}
+
+void ras_t::update_filter_pc (addr_t PC, addr_t NPC)
+{
+    uint32 index = PC % filter_table_size;
+    filter_tag[index] = PC;
+    filter_target[index] = NPC;
+}
+
+addr_t ras_t::peek_top(ras_state_t *rs)
+{
+    return table[rs->top];
+}

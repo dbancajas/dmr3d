@@ -1,0 +1,3 @@
+Unit1	Unit2	Unit3	RIM_left_Unit1	RIM_left_Unit2	RIM_right_Unit2	RIM_right_Unit3	RIM_top_Unit1	RIM_top_Unit3	RIM_bottom_Unit2	L2_left	L2	L2_right	Icache	Dcache	Bpred	DTB	FPAdd	FPReg	FPMul	FPMap	IntMap	IntQ	IntReg	IntExec	FPQ	LdStQ	ITB	RIM_top_FPMap	RIM_top_IntMap	RIM_top_IntQ	RIM_top_IntReg	RIM_left_L2_left	RIM_top_L2_left	RIM_left_L2	RIM_right_L2	RIM_bottom_L2	RIM_right_L2_right	RIM_top_L2_right
+10.0	25.0	15.0	0	0	0	0	0	0	0	1.44	7.37	1.44	8.27	14.3	4.55	0.179	1.24	0.775	1.33	0.0471	1.07	0.365	5.17	7.7	0.0354	3.46	0.4	0	0	0	0	0	0	0	0	0	0	0
+10.0	25.0	15.0	0	0	0	0	0	0	0	0.963	4.92	0.963	5.4	8.91	2.91	0.111	0.827	0.514	0.885	0.0368	0.693	0.237	3.28	4.98	0.0235	2.16	0.258	0	0	0	0	0	0	0	0	0	0	0

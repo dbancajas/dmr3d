@@ -1,0 +1,25 @@
+# Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+# Multiscalar Project.  ALL RIGHTS RESERVED.
+#
+# This software is furnished under the Multiscalar license.
+# For details see the LICENSE.mscalar file in the top-level source
+# directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+#
+# $Id: Makefile.sources,v 1.5.2.12 2006/08/18 14:30:18 kchak Exp $
+# List of source file for processor
+
+PROCESSOR_VPATH = $(MODULE_DIR)/processor:$(SRC_BASE)/$(MODULE_DIR)/processor/csp_alg
+
+SRC_FILES += dynamic.cc iwindow.cc mai.cc mai_instr.cc \
+             chip.cc sequencer.cc startup.cc fu.cc \
+             isa.cc yags.cc cascade.cc ctrl_flow.cc ras.cc lsq.cc \
+             st_buffer.cc mem_xaction.cc v9_mem_xaction.cc \
+             wait_list.cc fetch_buffer.cc \
+             mem_hier_handle.cc proc_stats.cc eventq.cc\
+             fastsim.cc mmu.cc thread_scheduler.cc thread_context.cc \
+			 disambig.cc csp_alg.cc base_alg.cc tsp_alg.cc ssp_alg.cc esp_alg.cc  \
+			 msp_alg.cc shb.cc disable_timer.cc os_alg.cc hybrid_alg.cc \
+			 func_alg.cc heatrun_alg.cc servc_alg.cc
+			 
+
+

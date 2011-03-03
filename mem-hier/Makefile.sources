@@ -1,0 +1,116 @@
+# Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+# Multiscalar Project.  ALL RIGHTS RESERVED.
+#
+# This software is furnished under the Multiscalar license.
+# For details see the LICENSE.mscalar file in the top-level source
+# directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+#
+# $Id: Makefile.sources,v 1.5.4.17 2006/12/12 18:36:57 pwells Exp $
+# List of source file for mem-hier
+
+
+# comment out protocols that you don't want to compile
+PROTOCOLS = 
+#PROTOCOLS += UNIP_ONE
+#PROTOCOLS += MP_ONE_MSI
+#PROTOCOLS += MP_TWO_MSI
+PROTOCOLS += UNIP_TWO
+#PROTOCOLS += UNIP_TWO_DRAM
+#PROTOCOLS += UNIP_ONE_COMPLEX
+#PROTOCOLS += CMP_INCL
+#PROTOCOLS += CMP_INCL_WT
+#PROTOCOLS += CMP_EXCL
+#PROTOCOLS += CMP_EX_3L
+#PROTOCOLS += CMP_INCL_3L
+
+MODULE_CFLAGS += $(foreach prot, $(PROTOCOLS), -DCOMPILE_$(prot))  
+
+MEMHIER_VPATH = $(MODULE_DIR)/mem-hier:$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols:$(SRC_BASE)/$(MODULE_DIR)/mem-hier/profile
+
+SRC_FILES += external.cc \
+			 mem_driver.cc \
+			 event.cc \
+			 meventq.cc \
+			 link.cc \
+			 mem_hier.cc \
+			 device.cc \
+			 message.cc \
+			 line.cc \
+			 cache.cc \
+			 messages.cc \
+			 networks.cc \
+			 networks.cc \
+			 trans_rec.cc \
+			 cache_bank.cc \
+			 interconnect.cc \
+			 random_tester.cc \
+			 mem_tracer.cc \
+			 spinlock.cc \
+			 codeshare.cc \
+			 sms.cc stackheap.cc function_profile.cc \
+			 mesh_simple.cc \
+			 mesh_sandwich.cc \
+			 warmup_trace.cc
+
+ifneq (,$(findstring UNIP_ONE,$(PROTOCOLS)))
+	SRC_FILES += unip_one_cache.cc
+endif
+
+ifneq (,$(findstring MP_ONE_MSI,$(PROTOCOLS)))
+	SRC_FILES += mp_one_msi_cache.cc \
+				 mp_one_msi_mainmem.cc
+endif
+
+ifneq (,$(findstring MP_TWO_MSI,$(PROTOCOLS)))
+	SRC_FILES += mp_two_msi_L1cache.cc \
+				 mp_two_msi_sharedL2cache.cc \
+				 mp_one_msi_mainmem.cc
+endif
+
+ifneq (,$(findstring UNIP_TWO,$(PROTOCOLS)))
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/unip_two
+	SRC_FILES += unip_two_l1d_cache.cc \
+				 unip_two_l1i_cache.cc \
+				 unip_two_l2_cache.cc
+endif
+
+ifneq (,$(findstring UNIP_ONE_COMPLEX,$(PROTOCOLS)))
+	SRC_FILES += unip_one_complex_cache.cc
+endif
+
+ifneq (,$(findstring CMP_INCL,$(PROTOCOLS)))
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_incl
+	SRC_FILES += cmp_incl_l2_cache.cc  \
+		     cmp_incl_l1_cache.cc
+endif
+
+ifneq (,$(findstring CMP_INCL_WT,$(PROTOCOLS)))
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_incl_wt
+	SRC_FILES += cmp_incl_wt_l2_cache.cc  \
+		     cmp_incl_wt_l1_cache.cc
+endif
+
+ifneq (,$(findstring CMP_EXCL,$(PROTOCOLS)))
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_excl
+	SRC_FILES += cmp_excl_l2_cache.cc  \
+		     cmp_excl_l1_cache.cc \
+		     cmp_excl_l1dir_array.cc
+endif
+
+ifneq (,$(findstring CMP_EX_3L,$(PROTOCOLS)))
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_excl
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_excl_3l
+	SRC_FILES += cmp_excl_3l_l3_cache.cc  \
+		     cmp_excl_3l_l1_cache.cc \
+		     cmp_excl_3l_l2_cache.cc \
+		     cmp_excl_3l_l2dir_array.cc
+endif
+
+ifneq (,$(findstring CMP_INCL_3L,$(PROTOCOLS)))
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_incl
+	MEMHIER_VPATH := $(MEMHIER_VPATH):$(SRC_BASE)/$(MODULE_DIR)/mem-hier/protocols/cmp_incl_3l
+	SRC_FILES += cmp_incl_3l_l3_cache.cc  \
+		     cmp_incl_3l_l1_cache.cc \
+		     cmp_incl_3l_l2_cache.cc 
+endif
+

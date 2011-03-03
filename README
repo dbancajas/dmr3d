@@ -1,0 +1,17 @@
+
+
+This is my new project. ms2sim + dramsim2
+
+This project combines ms2sim sparc simulator with the dram simulator from univ of maryland.
+I will create a 3d-memory model based on DRAMSim2 as a baseline for this project.
+Memory accesses of processors are then optimized using virtualization.
+
+
+The initial commit of this project on beanstalkapp.com uses a fully functional simulator connected to DRAMSim2.
+Dramsim has been extensively modified to be able to interface smoothly with main memory model of ms2sim.
+I have added a transaction Id for every memory transaction in ms2sim.
+
+Right now, the configuration is that of a uniprocessor + two-level cache. It will be extended soon for a 
+CMP + caches + dram memory and then ultimately to using multiple memory controllers.
+
+-Dean Ancajas

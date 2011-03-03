@@ -1,0 +1,142 @@
+// Compile time configuration Version 
+
+CONF_V_ARRAY_INT (fu_count, "# of functional units",          13, 127, 2, 2,  1, 4, 2, 2, 2, 2,  1,  1, 2, 2)
+CONF_V_ARRAY_INT (fu_latencies, "functional units latencies", 13,   1, 1, 4, 20, 1, 2, 2, 2, 4, 12, 24, 1, 1)
+
+CONF_V_INTEGER (fetch_stages, "# of pipeline stages for fetch", 3)
+CONF_V_INTEGER (decode_stages, "# of pipeline stages for decode", 2)
+CONF_V_INTEGER (rename_stages, "# of pipeline stages for rename", 2)
+CONF_V_INTEGER (commit_stages, "# of pipeline stages for commit", 3)
+CONF_V_INTEGER (window_size, "# of entries in instruction window", 128)
+CONF_V_INTEGER (lsq_load_size, "# of entries in load queue", 32)
+CONF_V_INTEGER (lsq_store_size, "# of entries in store queue", 32)
+CONF_V_INTEGER (stbuf_size, "# of entries in store buffer", 16)
+
+CONF_V_INTEGER (max_fetch, "# of instructions to fetch", 4)
+CONF_V_INTEGER (max_issue, "# of instructions to issue", 4)
+CONF_V_INTEGER (max_commit, "# of instructions to commit", 4)
+
+CONF_V_BOOL (kernel_params, "separate kernel params", false)
+
+CONF_V_INTEGER (yags_choice_bits, "# of choice bits for YAGS", 14)
+CONF_V_INTEGER (yags_exception_bits, "# of exception bits for YAGS", 12)
+CONF_V_INTEGER (yags_tag_bits, "# of tag bits for YAGS", 6)
+
+CONF_V_INTEGER (cas_filter_bits, "# of filter bits for CAS", 8)
+CONF_V_INTEGER (cas_exception_bits, "# of exception bits for CAS", 10)
+CONF_V_INTEGER (cas_exception_shift, "# of exception shift for CAS", 8)
+
+CONF_V_INTEGER (max_latency, "internal. cycles to hold", 5)
+
+CONF_V_INTEGER (ras_table_bits, "# of bits for RAS", 6)
+
+CONF_V_INTEGER (stats_print_cycles, "# of cycles to elapse for stats. 0 to disable", 10000000)
+CONF_V_INTEGER (run_cycles, "# of cycles to run simulation. 0 to disable", 0)
+CONF_V_INTEGER (run_commits, "# of instructions to commit. 0 to disable", 50000000)
+CONF_V_BOOL (overwrite_stats, "overwrite stats log", true)
+CONF_V_STRING (stats_log, "stats output file", "stats.log")
+
+CONF_V_BOOL (disable_stbuffer, "disable store buffer", false)
+
+CONF_V_BOOL (initiate_loads_commit, "initiate loads at commit", false)
+
+CONF_V_BOOL (issue_inorder, "issue inorder", false)
+
+CONF_V_BOOL (issue_load_commit, "issue loads at commit", false)
+CONF_V_BOOL (issue_store_commit, "issue stores at commit", false)
+
+CONF_V_BOOL (issue_non_spec, "issue non-speculatively", false)
+CONF_V_BOOL (issue_loads_non_spec, "issue loads non-speculatively", false) 
+CONF_V_BOOL (issue_stores_non_spec, "issue stores non-speculatively", false)
+
+CONF_V_BOOL (disable_complete_bypass, "disable complete bypass", false)
+CONF_V_BOOL (disable_extended_bypass, "disable extended bypass", false)
+CONF_V_BOOL (use_fetch_buffer, "Use of fetch buffer", false)
+CONF_V_INTEGER (fetch_buffer_size, "Size of fetch buffer", 4)
+
+CONF_V_INTEGER (wait_list_size, "internal. wait list size", 64)
+CONF_V_BOOL (retry, "retry instead of replay", true)
+
+CONF_V_BOOL (check_lsq_bypass, "check lsq bypass path", false)
+CONF_V_BOOL (initiate_loads_unresolved, "initiate loads with older unresolved stores", false)
+CONF_V_BOOL (store_prefetch, "prefetch store cache lines", false)
+
+CONF_V_BOOL (handle_interrupt_early, "early handling of interrupts", true)
+CONF_V_BOOL (kernel_stats, "separate kernel stats", false)
+
+CONF_V_BOOL (stall_mem_access, "stall mem access", false)
+CONF_V_INTEGER (stall_mem_access_cycles, "# of cycles to stall mem access", 12)
+
+CONF_V_INTEGER (check_freq, "forward progress check frequency (cycles)",  1000000)
+CONF_V_INTEGER (eventq_size, "eventq size", 50)
+
+// window size x 2 
+CONF_V_INTEGER (dead_list_size, "dead list size", 256)
+CONF_V_INTEGER (recycle_list_size, "recycle list size", 256)
+
+CONF_V_INTEGER (trap_levels, "internal. # of trap levels", 5)
+CONF_V_BOOL (recycle_instr, "recycle instructions", true)
+
+CONF_V_BOOL (use_internal_lsq, "use simics internal lsq", false)
+
+CONF_V_BOOL (heart_beat, "enable heart beat", true)
+CONF_V_INTEGER (heart_beat_cycles, "heart beat cycles", 5000000)
+
+CONF_V_BOOL (use_fastsim, "use fastsim", true)
+CONF_V_INTEGER (fastsim_icount, "fastsim instruction count", 1000)
+
+CONF_V_BOOL (separate_kbp, "separate kernel branch predictor", false)
+
+CONF_V_BOOL (use_mem_hier, "use ms2sim memory hierarchy", true)
+CONF_V_BOOL (use_processor, "use ms2sim processor", true)
+
+CONF_V_BOOL (disambig_prediction, "use memory disambiguation prediction", false)
+CONF_V_INTEGER (disambig_size, "size of memory disambig predictor", 128)
+CONF_V_BOOL (prefetch_unresolved, "prefetch unresolved/safe loads", false)
+
+CONF_V_BOOL (sync2_runahead, "don't squash and block fetch until sync2 at head", false)
+
+
+// Checkpoint Stuff
+CONF_V_STRING(processor_checkpoint_in, "Intermediate CheckPoint File", "")
+CONF_V_STRING(processor_checkpoint_out, "Next Checkpoint File", "")
+
+CONF_V_BOOL (use_mmu, "use ms2sim mmu (U2 only)", false)
+CONF_V_BOOL (mmu_hw_fill, "try to hardware fill mmu misses (Linux only)", false)
+
+CONF_V_INTEGER (memory_image_size, "memory image size. 0 for auto-probe.", 0)
+
+CONF_V_BOOL (trace_commits, "print disassembled commits", false)
+CONF_V_BOOL (trace_pipe, "print disassembled instr at each stage", false)
+CONF_V_INTEGER (trace_cpu, "only trace this CPU (> num_cpus to trace all)", 999)
+
+CONF_V_BOOL (line_prefetch, "Initiate next line prefetch from the fetch buffer", true)
+CONF_V_BOOL (straight_line_prefetch, "Contiguous Line Prediction only", true)
+CONF_V_INTEGER (line_pred_bits, "Prediction Table Size of Line Predictor", 10)
+
+CONF_V_INTEGER (extra_seq, "Number of 'extra' sequencers", 0)
+CONF_V_INTEGER (thread_switch_latency, "Cost of a thread switch (cycles)", 20)
+
+CONF_V_BOOL (separate_user_os, "Separate OS/User execution among cores", false)
+CONF_V_INTEGER (num_user_seq, "Number of sequencers dedicated to user code", 0)
+CONF_V_INTEGER (thread_preempt, "Cycles before preempting thread", 50000)
+
+
+CONF_V_ARRAY_INT (chip_design, "Chip design specification", 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+CONF_V_INTEGER (mutex_locked_pc, "VPC of Solaris jump when mutex is locked", 0)
+CONF_V_INTEGER (kernel_idle_enter, "VPC of entering kernel idle loop", 0)
+CONF_V_INTEGER (kernel_idle_exit, "VPC of leaving kernel idle loop", 0)
+CONF_V_INTEGER (kernel_scheduler_pc, "VPC of Solaris scheduler", 0)
+
+CONF_V_ARRAY_INT (syscall_provision, "Syscall requiring multiple h/w contexts", 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+CONF_V_INTEGER (scheduling_algorithm, "Algorithm to use while mapping threads", 0)
+CONF_V_BOOL (cache_only_provision, "Only study the cache behavior under provisioning", false)
+CONF_V_INTEGER (thread_hop_interval, "Cycles between threads hop in asymmetric provision", 1000000)
+
+CONF_V_BOOL (per_syscall_kern_stack, "Emulate a per-systemcall LWP stack (Solaris)", false)
+CONF_V_BOOL (per_syscall_kern_map, "Emulate a per-systemcall LWP map (Solaris)", false)
+CONF_V_BOOL (share_br_pred, "share the branch predictor", false)
+
+
+CONF_V_INTEGER (spinloop_threshold, "Number of unique store ", 5)
+

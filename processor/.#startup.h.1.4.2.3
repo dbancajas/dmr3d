@@ -1,0 +1,43 @@
+
+#ifndef _STARTUP_H_
+#define _STARTUP_H_
+
+class proc_object_t {
+public:
+	conf_object_t              obj;    
+
+	proc_tm_t                  **p;
+	uint32                     num_cpus;
+
+	mem_hier_handle_t          *mem_hier;
+	mem_driver_t               *mem_driver;
+	
+	timing_model_interface_t   *timing_iface;
+	timing_model_interface_t   *snoop_iface;
+
+	proc_interface_t           *proc_iface;
+
+	mmu_interface_t            *mmu_interface;
+	
+	// mh integreation
+	conf_object_t *mem_image;
+	image_interface *mem_image_iface;
+
+	proc_tm_t* search_proc_tm (conf_object_t *cpu, bool &shadow);
+	mem_hier_handle_t *get_mem_hier (void);
+	void set_mem_hier (mem_hier_handle_t *_mem_hier);
+	void set_mem_driver (mem_driver_t *_mem_driver);
+    mem_driver_t * get_mem_driver ();
+
+	void create_dummy_mem_hier (void);
+	void get_stats (void);
+
+    void stall_processor (void);
+    void raise_checkpoint_hap ();
+    
+    bool pending_checkpoint;
+   
+};
+
+
+#endif

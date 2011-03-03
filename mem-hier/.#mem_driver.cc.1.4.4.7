@@ -1,0 +1,283 @@
+/* Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ */
+
+/* description:    translates between the simics 'timing-model' and mem-hier
+ *                 interfaces
+ * initial author: Philip Wells 
+ *
+ */
+ 
+#include "simics/first.h"
+RCSID("$Id: mem_driver.cc,v 1.4.4.1 2005/03/22 15:25:22 kchak Exp $");
+ 
+#include "definitions.h"
+#include "transaction.h"
+#include "profiles.h"
+#include "mem_hier_handle.h"
+#include "mem_driver.h"
+#include "verbose_level.h"
+#include "profiles.h"
+#include "mem_hier.h"
+#include "external.h"
+#include "startup.h"
+
+#include "config.h"
+#include "config_extern.h"
+#include <signal.h>
+
+using namespace __gnu_cxx; 
+
+
+uint32 current_transaction_count;
+bool take_immediate_checkpoint;
+bool auto_advance_memhier_cycles;
+
+
+static void
+condor_vacate_handler(int sig)
+{
+    take_immediate_checkpoint = true;
+    auto_advance_memhier_cycles = true;
+}
+
+static void 
+magic_transactions(void *obj, void *cpu, int64 vector) {
+    current_transaction_count++;
+}
+
+mem_driver_t::mem_driver_t(proc_object_t *_processor) :
+    proc(_processor)
+{
+	mem_hier = new mem_hier_t(_processor);
+	mem_hier->set_ptr(mem_hier);	
+	mem_hier->set_handler(this);
+    runtime_config_file = "Nothing";
+	transactions = new hash_map < int, mem_trans_t *> [SIM_number_processors()+1];
+    current_transaction_count = 0;
+    break_sim_called = false;
+    take_immediate_checkpoint = false;
+    SIM_hap_register_callback ("Core_Magic_Instruction", 
+		(str_hap_func_t) magic_transactions, _processor);
+    signal(SIGTSTP, condor_vacate_handler);  
+    
+    auto_advance_memhier_cycles = false;
+    //for (uint32 i = 0; i < 1000000000; i++) {}
+}
+
+
+void mem_driver_t::auto_advance_memhier()
+{
+    uint32 count = 100;
+    uint32 steps = 0;
+    while (!mem_hier->is_quiet()) {
+        for (uint32 i = 0; i < count; i++)
+            mem_hier->advance_cycle();
+        steps++;
+    }
+    auto_advance_memhier_cycles = false;
+    
+}
+
+
+cycles_t 
+mem_driver_t::timing_operate(conf_object_t *proc_obj, conf_object_t *space, 
+	map_list_t *map, generic_transaction_t *mem_op)
+{
+	v9_memory_transaction_t *v9_trans = (v9_memory_transaction_t *) mem_op;
+	v9_trans->s.block_STC = 1;
+	
+	// To indicate proper CPU or some I/O device
+	uint8 proc_id = IS_CPU_MEM_OP(v9_trans->s.ini_type) ?
+				SIM_get_proc_no(v9_trans->s.ini_ptr) : SIM_number_processors();
+
+	mem_trans_t *trans;
+	trans = (transactions[proc_id])[v9_trans->s.id];
+
+	//printf("%02u@%12llu 0x%016llx: mem_driver::timing_operate()\n", 
+	//	   SIM_get_proc_no(v9_trans->s.ini_ptr), SIM_cycle_count(this),
+	//	   v9_trans->s.physical_address);
+
+	if (!trans) {
+		// Not found, create new one and add
+		trans = new mem_trans_t(v9_trans);
+		(transactions[proc_id])[trans->id] = trans;
+		// don't call for unstallable transactions or prefetches
+		// except for the second atomic if its a read (eg ldda)
+		// except that u2 doesn't mark these as atomic like u3, so
+		// hack some more crap in too 
+		if ((!trans->may_stall || trans->hw_prefetch) &&
+			(!trans->atomic || trans->write) &&
+			(trans->io_device || !trans->read))
+		{
+			trans->call_complete_request = false;
+		}
+
+		if (g_conf_cache_data) {
+			if (trans->write) {
+				// Copy write data to trans
+				trans->data = new uint8[trans->size];
+				SIM_c_get_mem_op_value_buf(&v9_trans->s, (char *)trans->data);  
+
+				VERBOSE_OUT(verb_t::data, "%10s @ %12llu 0x%016llx: storing\n",
+			    	        "mem-driver", external::get_current_cycle(), trans->phys_addr);
+				VERBOSE_DATA("mem-driver", external::get_current_cycle(), trans->phys_addr,
+				             trans->size, trans->data);
+			}
+			// Reads checked in snoop_operate
+		}
+
+		// Make a new request to the memory hierarchy
+		// TODO: ensure ini_ptr is a cpu
+        if (take_immediate_checkpoint)
+        {
+            if (auto_advance_memhier_cycles) auto_advance_memhier();
+            if (mem_hier->is_quiet() && !break_sim_called) {
+                mem_hier->write_checkpoint(g_conf_mem_hier_checkpoint_out);
+                //SIM_write_configuration_to_file(g_conf_workload_checkpoint.c_str());
+                //SIM_quit(0);
+                proc->raise_checkpoint_hap();
+                SIM_break_simulation("Ready to take warmup checkpoint");
+                break_sim_called = true;
+                trans->completed = 1;
+            } else {
+                //ASSERT(0);
+                //trans->completed = 1;
+                //complete_request(proc_obj, trans->ini_ptr, trans);
+                return max_stall;
+            }
+        } else
+            mem_hier->make_request(trans->ini_ptr, trans);
+           
+		// If this was a hit, complete_request was called already, but has no
+		// effect because the transaction isn't stalling yet (this function
+		// hasn't returned) so be done with it
+		if (trans->call_complete_request) {
+			ASSERT(trans->completed || trans->may_stall || g_conf_copy_transaction);
+
+			if (trans->completed) goto done;
+			else return max_stall;
+
+		} else {
+			goto done;
+		}
+		
+	} else {
+		// Old transaction found, delete if completed, otherwise stall
+        if (trans->completed || g_conf_copy_transaction) {
+			goto done;
+		} else {
+			fprintf(stderr, "@ %12llu Reissued Transaction 0x%016llx id: %d cpu %u\n",
+					external::get_current_cycle(), trans->phys_addr, trans->id, trans->cpu_id);
+			ASSERT_MSG(0, "Trans not completed after 100000 cycles");
+		}
+	}
+	
+	return max_stall; 
+
+done:
+	return 0;
+}	
+	
+cycles_t 
+mem_driver_t::snoop_operate(conf_object_t *proc_obj, conf_object_t *space, 
+		map_list_t *map, generic_transaction_t *mem_op)
+{
+	v9_memory_transaction_t *v9_trans = (v9_memory_transaction_t *) mem_op;
+
+	// To indicate proper CPU or some I/O device
+	uint8 proc_id = IS_CPU_MEM_OP(v9_trans->s.ini_type) ?
+				SIM_get_proc_no(v9_trans->s.ini_ptr) : SIM_number_processors();
+	mem_trans_t *trans;
+	trans = (transactions[proc_id])[v9_trans->s.id];
+	
+	ASSERT(trans);
+
+	// Check if load values were correct
+	if (g_conf_cache_data) {
+		if (trans->read && trans->data && !trans->sw_prefetch) {
+			uint8 *databuf = new uint8[trans->size];
+			SIM_c_get_mem_op_value_buf(&v9_trans->s, (char *)databuf);
+			
+			// Output data
+			VERBOSE_OUT(verb_t::data, "%10s @ %12llu 0x%016llx: recieved\n",
+				"mem-driver", mem_hier->get_g_cycles(), trans->phys_addr);
+			VERBOSE_DATA("mem-driver", mem_hier->get_g_cycles(),
+				trans->phys_addr, trans->size, trans->data);
+			
+			VERBOSE_OUT(verb_t::data, "%10s @ %12llu 0x%016llx: simics\n",
+				"mem-driver", mem_hier->get_g_cycles(), trans->phys_addr);
+			VERBOSE_DATA("mem-driver", mem_hier->get_g_cycles(),
+				trans->phys_addr, trans->size, databuf);
+						 
+			// Compare data
+			int retval = memcmp(trans->data, databuf, trans->size);
+			//ASSERT_MSG(retval == 0, "Simics/mem-hier data mismatch");
+			ASSERT_WARN(retval == 0);
+			if (g_conf_break_data_mismatch && retval != 0) {
+				SIM_break_cycle(get_cpu(), 0);
+			}
+			delete [] databuf;
+		}
+		else if (trans->read) {
+			ASSERT(trans->io_device || trans->is_io_space() ||
+			       trans->sw_prefetch ||
+				   // FIXME: hack to identify flush
+				   SIM_get_mem_op_type(&v9_trans->s) == Sim_Trans_Cache
+				   );
+		}
+			
+	}
+
+	transactions[proc_id].erase(trans->id);
+	delete trans;
+	return 0;
+}
+	
+void
+mem_driver_t::complete_request(conf_object_t *obj, 
+	conf_object_t *cpu, mem_trans_t *trans)
+{
+	ASSERT(trans->completed);
+    SIM_release_stall(trans->ini_ptr, trans->id);
+}	
+
+void 
+mem_driver_t::invalidate_address (conf_object_t *obj, conf_object_t *cpu, 
+		invalidate_addr_t *invalid_addr)
+{ }
+
+void
+mem_driver_t::set_cpus(conf_object_t **cpus, uint32 num_cpus)
+{
+	mem_hier->set_cpus(cpus, num_cpus);
+}
+
+conf_object_t *
+mem_driver_t::get_cpu()
+{
+	return mem_hier->get_cpu_object(0);
+}
+
+void
+mem_driver_t::set_runtime_config(string config)
+{
+	runtime_config_file = config; 
+	mem_hier->read_runtime_config_file(config);
+}
+
+string
+mem_driver_t::get_runtime_config()
+{
+	return runtime_config_file; 
+}
+
+void
+mem_driver_t::print_stats()
+{
+	mem_hier->print_stats();
+}

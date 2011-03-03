@@ -1,0 +1,67 @@
+***************
+*** 511,520 ****
+  
+                 case ActionL1Read:
+                         if (!can_allocate_mshr(t, ret))        goto block_message_poll;
+-                        if (!can_enqueue_request_mshr(t, ret)) goto block_message_poll;
+  
+                         allocate_mshr(t, ret);
+-                        enqueue_request_mshr(t, ret);
+                         send_request_forward(t, ret, TypeReadFwd);
+              mark_requester_as_sharer(t, ret);
+                         t->trans->mark_event(MEM_EVENT_L2_REQ_FWD);
+--- 511,520 ----
+  
+                 case ActionL1Read:
+                         if (!can_allocate_mshr(t, ret))        goto block_message_poll;
++ //                     if (!can_enqueue_request_mshr(t, ret)) goto block_message_poll;
+  
+                         allocate_mshr(t, ret);
++ //                     enqueue_request_mshr(t, ret);
+                         send_request_forward(t, ret, TypeReadFwd);
+              mark_requester_as_sharer(t, ret);
+                         t->trans->mark_event(MEM_EVENT_L2_REQ_FWD);
+***************
+*** 600,610 ****
+                         break;
+  
+                 case ActionL1FwdAck:
+              deallocate_mshr(t, ret);
+                         ret->next_state = StateShared;
+                         break;
+  
+                 case ActionL1FwdAckData:
+              deallocate_mshr(t, ret);
+                         store_data_to_cache(t, ret);
+                         ret->next_state = StateShared;
+--- 600,612 ----
+                         break;
+  
+                 case ActionL1FwdAck:
++                        perform_mshr_requests(t, ret);
+              deallocate_mshr(t, ret);
+                         ret->next_state = StateShared;
+                         break;
+  
+                 case ActionL1FwdAckData:
++                        perform_mshr_requests(t, ret);
+              deallocate_mshr(t, ret);
+                         store_data_to_cache(t, ret);
+                         ret->next_state = StateShared;
+***************
+*** 844,850 ****
+         DEBUG_TR_FN("%s", t, ret, __func__);
+  
+         mshr_type_t *request = mshr->pop_request();
+-        ASSERT(request);
+  
+         while (request) {
+  
+--- 846,852 ----
+         DEBUG_TR_FN("%s", t, ret, __func__);
+  
+         mshr_type_t *request = mshr->pop_request();
++ //     ASSERT(request);
+  
+         while (request) {
+  

@@ -1,0 +1,137 @@
+/* Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ *
+ */
+
+/* description:    base abstract cache class
+ * initial author: Philip Wells 
+ *
+ */
+ 
+#include "simics/first.h"
+RCSID("$Id: cache.cc,v 1.1.1.1.10.2 2005/03/11 17:07:47 pwells Exp $");
+
+#include "definitions.h"
+#include "config.h"
+#include "device.h"
+#include "line.h"
+#include "link.h"
+#include "cache.h"
+#include "transaction.h"
+#include "mshr.h"
+#include "external.h"
+#include "debugio.h"
+#include "verbose_level.h"
+
+///////////////////////////
+// Cache Utility Functions
+//
+
+cache_t::cache_t(string name, uint32 _num_links, cache_config_t *conf)
+	: device_t(name, _num_links)
+{
+	// Calculate cache parameters from config
+	lsize = conf->lsize;
+	assoc = conf->assoc;
+	numlines = conf->size * 1024 / lsize; // size is in Kbytes
+	numwb_buffers = conf->writeback_buffersize;
+	num_banks = conf->banks;
+	bank_bw = conf->bank_bw;
+	request_q_size = conf->req_q_size;
+	wait_q_size = conf->wait_q_size;
+	
+	if (assoc == 0) assoc = numlines;
+
+	numlines_bits = (uint32) log2(numlines);
+	lsize_bits = (uint32) log2(lsize);
+	assoc_bits = (uint32) log2(assoc);
+	bank_bits = (uint32) log2(num_banks);
+
+	ASSERT(numlines == (uint32) (1 << numlines_bits));
+	ASSERT(lsize == (uint32) (1 << lsize_bits));
+	ASSERT(assoc == (uint32) (1 << assoc_bits));
+	ASSERT(num_banks == (uint32) (1 << bank_bits));
+	
+	// Stored in one array so banks not considered in index calculation
+	offset_mask = get_mask(0, lsize_bits);
+	tag_start_bit = numlines_bits - assoc_bits + lsize_bits;
+	index_mask = get_mask(lsize_bits, tag_start_bit);
+	tag_mask = get_mask(tag_start_bit, -1);
+	bank_mask = get_mask(lsize_bits, lsize_bits+bank_bits);
+
+	VERBOSE_OUT(verb_t::config,
+		"%10s config: %u %u %u %u, %u %u %u %u, 0x%llx 0x%llx 0x%llx 0x%llx %d %d\n",
+		get_cname(), numlines, lsize, assoc, num_banks,
+		numlines_bits, lsize_bits, assoc_bits, bank_bits,
+		index_mask, tag_mask, offset_mask, bank_mask, request_q_size, 
+		wait_q_size);
+}
+
+cache_t::~cache_t()
+{ 
+}
+
+addr_t
+cache_t::get_size() {
+    return numlines * lsize;
+}
+
+// Return mask from bit min (inclusinve) to bit max (exclusive)
+addr_t
+cache_t::get_mask(const int min, const int max) 
+{
+	if (max == -1)
+		return (~0 << min);
+	else 
+		return ((~0 << min) & ~(~0 << max));
+}
+
+addr_t
+cache_t::get_tag(const addr_t addr)
+{
+	return (addr & tag_mask) >> tag_start_bit;
+}
+
+addr_t
+cache_t::get_index(const addr_t addr) 
+{
+	return (addr & index_mask) >> lsize_bits;
+}
+
+addr_t
+cache_t::get_offset(const addr_t addr)
+{
+    return (addr & offset_mask);
+}
+
+uint32
+cache_t::get_bank(const addr_t addr)
+{
+    return (addr & bank_mask) >> lsize_bits;
+}
+
+addr_t
+cache_t::get_address(const addr_t tag, const addr_t index, const addr_t offset)
+{
+	return (tag << tag_start_bit) | (index << lsize_bits) | offset;
+}
+
+addr_t
+cache_t::get_line_address(const addr_t addr)
+{
+	return (addr & (~offset_mask));
+}
+
+// Accessor functions
+uint32
+cache_t::get_lsize()
+{
+	return (lsize);
+}
+
+
+

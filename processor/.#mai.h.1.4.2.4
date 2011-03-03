@@ -1,0 +1,67 @@
+/* Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ *
+ */
+
+#ifndef _MAI_H_
+#define _MAI_H_
+
+class mai_t {
+private: 
+	chip_t    *p;
+	conf_object_t *cpu;
+	conf_object_t *shadow_cpu;
+	
+	sparc_v9_interface_t *v9_interface;
+	
+	safe_uint64        ivec;
+
+public:
+	mai_t (conf_object_t *_cpu, chip_t *_p);
+
+	~mai_t (void);
+
+	conf_object_t *get_cpu_obj ();
+	void piq (void);
+	void break_sim (tick_t when);
+
+	addr_t get_pc (void);
+	addr_t get_npc (void);
+
+	uint64 get_tl (void);
+	uint64 get_tt (uint64 tl);
+	uint64 get_user_g1 ();
+
+	void handle_interrupt (sequencer_t *seq, proc_stats_t *pstats);
+	void set_interrupt(uint64 vector);
+	void reset_interrupt();
+	bool pending_interrupt();
+	uint64 get_interrupt();
+
+	void set_reorder_buffer_size (uint64 entries);
+	bool is_supervisor (void);
+
+	void setup_trap_context (void);
+	void set_shadow_cpu_obj (conf_object_t *_cpu);
+	conf_object_t *get_shadow_cpu_obj (void);
+
+	bool check_shadow (void);
+	void copy_master_simics_attributes (void);
+
+	void simics_lsq_enable (conf_object_t *_cpu, bool b);
+	void auto_probe_sim_parameters (void); 
+	uint64 get_memory_image_size (void);
+	
+	int32 get_id();
+    void write_checkpoint(FILE *file);
+    void read_checkpoint(FILE *file);
+	
+	proc_stats_t *get_tstats();
+    uint64      get_syscall_num();
+};
+
+#endif

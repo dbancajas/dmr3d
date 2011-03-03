@@ -1,0 +1,16 @@
+void temp_block_tpopulate_R_model_block(block_model_t *model, flp_t *flp;
+void temp_block_tpopulate_C_model_block(block_model_t *model, flp_t *flp;
+void temp_block_tset_internal_power_block (block_model_t *model, double *pow;
+void temp_block_tsteady_state_temp_block(block_model_t *model, double *power, double *temp);
+void temp_block_tcompute_temp_block(block_model_t *model, double *power, double *temp, double time_elapsed;
+void temp_block_ttrim_hotspot_vector_block(block_model_t *model, double *dst, double *src, 
+						 	   int at, int size;
+void temp_block_tresize_thermal_model_block(block_model_t *model, int n_units;
+void temp_block_tset_temp_block(block_model_t *model, double *temp, double val;
+void temp_block_tdump_temp_block(block_model_t *model, double *temp, char *file;
+void temp_block_tread_temp_block(block_model_t *model, double *temp, char *file, int clip;
+void temp_block_tdump_power_block(block_model_t *model, double *power, char *file;
+void temp_block_tread_power_block (block_model_t *model, double *power, char *file;
+double temp_block_tfind_max_temp_block(block_model_t *model, double *temp;
+double temp_block_tfind_avg_temp_block(block_model_t *model, double *temp;
+void temp_block_tdelete_block_model(block_model_t *model;

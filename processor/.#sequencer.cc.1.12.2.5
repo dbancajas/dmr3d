@@ -1,0 +1,896 @@
+/* Copyright (c) 2003 by Gurindar S. Sohi for the Wisconsin
+ * Multiscalar Project.  ALL RIGHTS RESERVED.
+ *
+ * This software is furnished under the Multiscalar license.
+ * For details see the LICENSE.mscalar file in the top-level source
+ * directory, or online at http://www.cs.wisc.edu/mscalar/LICENSE
+ *
+ */
+
+#include "simics/first.h"
+RCSID("$Id: sequencer.cc,v 1.12.2.5 2005/10/28 18:28:03 pwells Exp $");
+
+#include "definitions.h"
+#include "window.h"
+#include "iwindow.h"
+#include "sequencer.h"
+#include "fu.h"
+#include "isa.h"
+#include "chip.h"
+#include "eventq.h"
+#include "dynamic.h"
+#include "mai_instr.h"
+#include "mai.h"
+#include "ras.h"
+#include "ctrl_flow.h"
+#include "lsq.h"
+#include "st_buffer.h"
+#include "mem_xaction.h"
+#include "v9_mem_xaction.h"
+#include "transaction.h"
+#include "wait_list.h"
+#include "mem_hier_handle.h"
+#include "proc_stats.h"
+#include "counter.h"
+#include "histogram.h"
+#include "stats.h"
+#include "config_extern.h"
+#include "fastsim.h"
+#include "fetch_buffer.h"
+
+// static initializations
+uint64 sequencer_t::seq_id = 0;
+dynamic_instr_t *sequencer_t::icache_d_instr = 0;
+dynamic_instr_t *sequencer_t::mmu_d_instr = 0;
+
+sequencer_t::sequencer_t (chip_t *_p, uint32 _id, uint32 *mai_ids, uint32 _ctxts) 
+    : num_hw_ctxt (_ctxts) 
+{
+	p = _p;
+	id = _id;
+
+    mai = new mai_t *[num_hw_ctxt];
+    ctrl_flow = new ctrl_flow *[num_hw_ctxt];
+    fetch_status = new uint32[num_hw_ctxt];
+    
+    ivec = new safe_uint64[num_hw_ctxt];
+    shadow_ivec = new safe_uint64[num_hw_ctxt];
+    
+    
+    
+    for (uint32 i = 0; i < num_hw_ctxt; i++)
+    {
+        mai[i] = p->get_mai_object(mai_ids[i]);
+        if (mai[i]) {
+            fetch_status[i] = 0x0;
+            ctrl_flow[i] = new ctrl_flow_t (this, mai->get_pc (), mai->get_npc ());
+        } else {
+            fetch_status[i] = FETCH_GPC_UNKNOWN;
+            ctrl_flow[i] = new ctrl_flow_t (this, 0, 0);
+        }
+        
+        ivec[i].initialize ();
+        shadow_ivec[i].initialize ();
+        
+    }
+	
+	iwindow = new iwindow_t (g_conf_window_size);
+	if (mai)
+		mai->set_reorder_buffer_size (g_conf_window_size);
+
+	lsq = new lsq_t (this);
+	st_buffer = new st_buffer_t (g_conf_stbuf_size, this);
+
+	fus = new (fu_t *) [FU_TYPES];	
+	for (fu_type_t unit = FU_NONE; unit < FU_TYPES; ++unit) {
+		fus [unit] = new fu_t (unit, g_conf_fu_latencies [unit], 
+			g_conf_fu_count [unit]);
+	}
+
+	
+	fetch_buffer = new fetch_buffer_t (this);
+
+	eventq = new eventq_t (g_conf_eventq_size);
+	dead_list = new wait_list_t (g_conf_dead_list_size);
+	recycle_list = new wait_list_t (g_conf_recycle_list_size);
+	
+#if 0
+	if (g_conf_use_fastsim) 
+		prepare_fastsim ();
+#endif
+	fastsim = p->get_fastsim(id);
+
+    
+	
+	wait_after_switch = 0;
+	
+	wait_on_checkpoint = false;
+    
+    
+}
+
+sequencer_t::~sequencer_t (void) {
+	delete iwindow;
+
+	delete [] fus;
+	delete ctrl_flow;
+	delete lsq;
+	delete st_buffer;
+
+	delete eventq;
+	delete dead_list;
+	delete recycle_list;
+}
+
+uint64 
+sequencer_t::generate_seq_id (void) {
+	return seq_id++;
+}
+
+fu_t*
+sequencer_t::get_fu_resource (fu_type_t unit) {
+	if (unit == FU_TYPES) 
+		return 0; 
+	else 	
+		return fus [unit];
+}
+
+chip_t *
+sequencer_t::get_chip (void) {
+	return p;
+}
+
+iwindow_t*
+sequencer_t::get_iwindow (void) {
+	return iwindow;
+}
+
+lsq_t*
+sequencer_t::get_lsq (void) {
+	return lsq;
+}
+
+st_buffer_t*
+sequencer_t::get_st_buffer (void) {
+	return st_buffer;
+}
+
+mai_t*
+sequencer_t::get_mai_object (uint tid) {
+	return mai[tid];
+}
+
+void 
+sequencer_t::safety_checks (void) {
+	if (SIM_get_pending_exception ()) FAIL;
+}
+
+void
+sequencer_t::front_end_status () {
+	memq_t *ldq = lsq->get_ldq ();
+	memq_t *stq = lsq->get_stq ();
+
+	// iwindow
+	if (iwindow->empty ()) {
+        for (uint32 i = 0; i < num_hw_ctxt; i++)
+        {
+            reset_fu_status (i, FETCH_STALL_UNTIL_EMPTY); 
+            reset_fu_status (i, FETCH_WINDOW_FULL);
+        }
+		ASSERT (ldq->empty ());
+		ASSERT (stq->empty ());
+	
+	} else if (iwindow->full ()) {
+		set_fu_status (FETCH_WINDOW_FULL);
+	} else {
+		ASSERT (!iwindow->empty ());
+		ASSERT (!iwindow->full ());
+
+		reset_fu_status (FETCH_WINDOW_FULL);
+	}
+
+	// ldq
+	if (!ldq->full ()) {
+		reset_fu_status (FETCH_LDQ_FULL);
+	}
+
+	// stq
+	if (!stq->full ())  {
+		reset_fu_status (FETCH_STQ_FULL);
+	}
+}
+
+void 
+sequencer_t::advance_cycle (void) {
+	if (!mai) return;
+
+    proc_stats_t *pstats = get_pstats ();
+	
+	STAT_INC (pstats->stat_cycles);
+
+	if (fastsim && fastsim->fastsim_mode ()) {
+		if (iwindow->empty ()) 
+			if (fastsim->sim ())
+				finish_fastsim ();
+
+		return;	
+	}
+
+	handle_interrupt ();
+
+	start ();
+	finish ();
+
+	eventq->advance_cycle ();
+
+	schedule ();
+
+	cleanup_dead ();
+
+	front_end_status ();
+	st_buffer->advance_cycle ();
+
+	safety_checks ();
+
+	pstats->iwindow_stats (iwindow);
+	
+	handle_simulation ();
+
+	forward_progress_check ();
+}
+
+void
+sequencer_t::forward_progress_check () {
+
+	proc_stats_t *pstats = get_pstats ();
+
+	uint64 check_cycle = STAT_GET (pstats->stat_check_cycle);
+
+	if (check_cycle == p->get_g_cycles ()) {
+		uint64 last_commits = STAT_GET (pstats->stat_last_commits);
+
+		check_cycle += g_conf_check_freq;
+		STAT_SET (pstats->stat_check_cycle, check_cycle);
+
+		uint64 commits = STAT_GET (pstats->stat_commits);
+		STAT_SET (pstats->stat_last_commits, commits);
+
+		if (last_commits == commits) {
+			ASSERT(mai);
+            mai->piq();
+			DEBUG_OUT ("No forward progress for Seq %d.at %llu \n", get_id(),p->get_g_cycles()); 
+			FAIL;
+		}
+	}
+}
+
+void 
+sequencer_t::handle_simulation () {
+
+	if (wait_on_checkpoint) {
+		ASSERT(mai);
+		if (mai->get_tl() == 0) {
+			wait_on_checkpoint = false;
+			set_fu_status(FETCH_PENDING_CHECKPOINT);
+		}
+		STAT_INC(get_pstats()->stat_checkpoint_penalty);
+	} else if (get_fu_status(FETCH_PENDING_CHECKPOINT)) {
+		if (iwindow->empty() && mai && mai->get_tl() != 0) {
+			wait_on_checkpoint = true;
+			reset_fu_status(FETCH_PENDING_CHECKPOINT);
+		}
+		STAT_INC(get_pstats()->stat_checkpoint_penalty);
+	}
+
+	proc_stats_t **pstats_list = p->get_pstats_list (id);
+	ASSERT(mai);
+
+	uint32 i = 0;
+	uint64 total_commits = 0;
+	uint64 total_cycles = 0;
+
+	while (pstats_list [i] != 0) {
+		total_commits += (uint64) pstats_list [i]->stat_commits->get_total ();
+		total_cycles += (uint64) pstats_list [i]->stat_cycles->get_total ();
+
+		i++;
+	}
+
+
+	if (g_conf_run_cycles && 
+		p->get_g_cycles () == (uint64) g_conf_run_cycles) {
+
+		structure_stats ();
+		p->print_stats ();
+        p->get_mem_hier()->print_stats();
+		mai->break_sim (0);
+	}
+
+	if (g_conf_run_commits && 
+		total_commits >= (uint64) g_conf_run_commits) {
+
+		structure_stats ();
+		p->print_stats ();
+        p->get_mem_hier()->print_stats();
+		mai->break_sim (0);
+	}
+
+	if ( g_conf_heart_beat && ((p->get_g_cycles () % g_conf_heart_beat_cycles) == 0) ) 
+		DEBUG_OUT ("seq%d committed %lld instructions in %lld cycles\n", 
+			get_id (), total_commits, total_cycles);
+}
+
+void
+sequencer_t::structure_stats () {
+	proc_stats_t *pstats = get_pstats ();
+
+	STAT_SET (pstats->stat_dead_list_size, dead_list->get_size ());
+	STAT_SET (pstats->stat_recycle_list_size, recycle_list->get_size ());
+}
+
+
+void 
+sequencer_t::prepare_fastsim () {
+    
+    // Not handle fastsim in SMT
+	squash_inflight_instructions (0);	
+	ASSERT (!fastsim->fastsim_mode ());
+
+	fastsim->sim_icount (g_conf_fastsim_icount);
+
+	if (ivec[0].is_valid ())
+		fastsim->set_interrupt (get_interrupt (0));
+}
+
+void 
+sequencer_t::finish_fastsim () {
+	ASSERT (!fastsim->fastsim_mode ());
+	set_interrupt (fastsim->get_interrupt ());
+}
+
+
+void 
+sequencer_t::prepare_for_interrupt (mai_t *_ma) {
+    uint8 tid ;
+    for (tid = 0 ; tid < num_hw_ctxt; tid++)
+    {
+        if (mai[tid] == _ma) break;
+    }
+    
+	ASSERT(tid < num_hw_ctxt && mai[tid]);
+	
+	if (ivec[tid].is_valid () && 
+		( !mai[tid]->check_shadow () || shadow_ivec[tid].is_valid () )) 
+	 {
+		if (!get_fu_status (tid, FETCH_STALL_UNTIL_EMPTY)) 
+			set_fu_status (tid, FETCH_STALL_UNTIL_EMPTY);
+		
+		st_buffer->panic_clear ();
+
+		if (g_conf_handle_interrupt_early)
+			squash_inflight_instructions (tid);
+	}
+}
+
+void
+sequencer_t::squash_inflight_instructions (uint8 tid) {
+
+	dynamic_instr_t *d_instr = iwindow->head ();
+	if (!d_instr) return;
+
+	if (d_instr->get_tid() == tid && 
+        d_instr->get_pipe_stage () <= PIPE_EXECUTE) {
+		d_instr->kill_all ();
+		return;
+	}
+
+	uint32 index = iwindow->get_last_created ();
+	uint32  head = iwindow->get_last_committed ();
+
+	do {
+		d_instr      = iwindow->peek (index);
+		index        = iwindow->window_decrement (index);
+
+		if (d_instr->get_tid() == tid && 
+            d_instr->get_sync () && d_instr->get_pipe_stage () > PIPE_EXECUTE) break;
+
+	} while (index != head);
+
+	if (d_instr->get_next_d_instr ())
+		d_instr->get_next_d_instr ()->kill_all ();
+}
+
+
+void
+sequencer_t::start (void) {
+
+	uint32 fetch_avail = g_conf_max_fetch;
+	
+	if (wait_after_switch) {
+		STAT_INC(get_pstats()->stat_thread_switch_overhead);
+		wait_after_switch--;
+		return;
+	}
+	
+    
+    // Need to select thread to fetch from
+    set<uint8> tid_list;
+    
+    for (uint32 i = 0; i < num_hw_ctxt; i++)
+        if (fu_ready(i)) tid_list.insert(i);
+    
+    
+	while (tid_list.size()  && fetch_avail > 0 && iwindow->slot_avail ()) {
+
+        uint8 tid = select_thread_for_fetch (tid_list);
+        
+		dynamic_instr_t *d_instr = 0;
+		
+		if (g_conf_recycle_instr)
+			d_instr = recycle (tid);
+
+		if (!d_instr)
+			d_instr = new dynamic_instr_t (this, tid);
+        
+        
+
+		d_instr->set_pipe_stage (PIPE_INSERT);
+		d_instr->wakeup ();
+        
+        if (!fu_ready(tid)) tid_list.delete(tid);
+        
+		fetch_avail--;
+	}
+
+//	DEBUG_OUT ("fetched %lld instructions at cycle %lld\n", 
+//		g_conf_max_fetch - fetch_avail, p->get_g_cycles ());
+}
+
+
+void sequencer_t::smt_commit (void) {
+    uint32 commit_avail = g_conf_max_commit;
+    
+    set<uint8> tids_processed;
+    
+    while (commit_avail > 0 && !iwindow->empty() && 
+           tids_processed.size() < num_hw_ctxt)
+    {
+        dynamic_instr_t *d_instr = iwindow->peek_instr_for_commit(tids_processed);
+        if (process_instr_for_commit (d_instr)) {
+            commit_avail--;
+            // Update commit stats for the tid
+        } else {
+            tids_processed.insert(d_instr->get_tid());
+        }
+    }
+    
+    
+}
+
+bool sequencer_t::process_instr_for_commit (dynamic_instr_t *d_instr)
+{
+    bool retire = false;
+    ASSERT(d_instr);
+    
+    if (d_instr->speculative ()) {
+        d_instr->kill_all ();
+    } else if (d_instr->get_pipe_stage () == PIPE_MEM_ACCESS) {
+        if (d_instr->is_load ()) {
+            d_instr->ld_mem_access ();
+        } else if (d_instr->is_store ()) {
+            if (d_instr->immediate_release_store () && !st_buffer->empty ())
+               return false;
+            d_instr->st_mem_access ();
+        } else FAIL;
+        
+        
+    } else if (d_instr->get_pipe_stage () == PIPE_MEM_ACCESS_SAFE) {
+        ASSERT (d_instr->is_load ());
+        if (!st_buffer->empty ()) return false;
+        
+        d_instr->safe_ld_mem_access (); 
+        
+    } else if (d_instr->retire_ready ()) {
+        if (d_instr->is_store () && 
+            !d_instr->immediate_release_store () &&
+        st_buffer->full ()) 
+        return false;
+        
+        d_instr->retire ();
+        retire = true;
+    }
+    
+    return retire;
+    
+}
+
+void 
+sequencer_t::finish (void) {
+	proc_stats_t *pstats = get_pstats ();
+	uint32 commit_avail = g_conf_max_commit;
+    
+    
+
+	while (commit_avail > 0 && !iwindow->empty ()) {
+		dynamic_instr_t *d_instr = iwindow->head ();
+		ASSERT (d_instr);
+
+		if (process_instr_for_commit (d_instr)) {
+
+			STAT_INC (pstats->stat_commits);
+			commit_avail--;
+
+		} else 
+			break;
+	}
+}
+
+void
+sequencer_t::insert_dead (dynamic_instr_t *d_instr) {
+
+	wait_list_t *wl = dead_list->get_end_wait_list ();
+	if (wl->full ()) wl = dead_list->create_wait_list ();
+
+	wl->insert (d_instr);
+
+//	ASSERT (!dead_list->full ());
+}
+
+void
+sequencer_t::insert_recycle (dynamic_instr_t *d_instr) {
+
+	wait_list_t *wl = recycle_list->get_end_wait_list ();
+	if (wl->full ()) wl = recycle_list->create_wait_list ();
+
+	wl->insert (d_instr);
+
+//	ASSERT (!recycle_list->full ());
+}
+
+dynamic_instr_t*
+sequencer_t::recycle () {
+	dynamic_instr_t *d_instr = recycle_list->head ();
+
+	if (d_instr) {
+		recycle_list->pop_head (d_instr);
+		adjust_wait_list (recycle_list);
+
+		d_instr->recycle ();
+	}
+
+	return d_instr;
+}
+
+wait_list_t*
+sequencer_t::adjust_wait_list (wait_list_t* & start_wl) {
+	wait_list_t *next_wl = 0, *wl;
+
+	if (!start_wl->empty ()) return start_wl;
+
+	wait_list_t *end_wl = start_wl->get_end_wait_list ();
+
+	for (wl = start_wl; 
+		wl && wl->get_next_wl () && wl->empty (); 
+		wl = next_wl) {
+
+		next_wl = wl->get_next_wl ();
+
+		ASSERT (wl->empty ());
+		wl->set_end_wait_list (0);
+		wl->set_next_wait_list (0);
+
+		delete wl;
+	}
+
+//	ASSERT (!wl->empty ());
+	wl->set_end_wait_list (end_wl);
+
+	start_wl = wl;
+	return start_wl;
+}
+
+void
+sequencer_t::cleanup_dead (void) {
+	wait_list_t *wl = dead_list;
+
+	for (; wl; wl = wl->get_next_wl ()) {
+		while (wl->head ()) {
+			dynamic_instr_t *d_instr = wl->head ();
+			if (d_instr->get_outstanding () == 0x0) {
+				wl->pop_head (d_instr);
+
+				if (g_conf_recycle_instr)
+					insert_recycle (d_instr);
+				else	
+					delete d_instr;
+
+			} else 
+				break;
+		}
+	}
+
+	adjust_wait_list (dead_list);
+}
+
+bool
+sequencer_t::get_fu_status (uint8 tid, uint32 s) {
+	return ((fetch_status[tid] & s) == s);	
+}
+
+uint32
+sequencer_t::get_fu_status (uint tid) {
+	return fetch_status[tid];
+}
+
+void
+sequencer_t::set_fu_status (uint8 tid, uint32 s) {
+	fetch_status[tid] = (fetch_status[tid] | s);
+}
+
+void
+sequencer_t::reset_fu_status (uint8 tid, uint32 s) {
+	fetch_status[tid] = (fetch_status[tid] & (~s));
+}
+
+bool
+sequencer_t::fu_ready (uint tid) {
+	return (fetch_status[tid] == 0x0);
+}
+
+addr_t
+sequencer_t::get_pc (uint8 tid) {
+	return (ctrl_flow[tid]->get_pc ());
+}
+
+addr_t
+sequencer_t::get_npc (uint tid) {
+	return (ctrl_flow[tid]->get_npc ());
+}
+
+ctrl_flow_t*
+sequencer_t::get_ctrl_flow (uint8 tid) {
+	return ctrl_flow[tid];
+}
+
+void
+sequencer_t::handle_interrupt () {
+    
+    for (uint32 i = 0; i < num_hw_ctxt; i++)
+    {
+        ASSERT(mai[i]);
+        
+        if (ivec[i].is_valid () && 
+            ( !mai[i]->check_shadow () || shadow_ivec[i].is_valid () ) ) 
+		mai[i]->handle_interrupt (this);
+        
+    }
+}
+
+
+bool
+sequencer_t::st_buffer_empty()
+{
+    return st_buffer->empty();
+}
+
+void 
+sequencer_t::set_shadow_interrupt (int64 _v) {
+	shadow_ivec.set (_v);
+}
+
+
+void 
+sequencer_t::set_interrupt (uint8 tid, int64 _v) {
+
+	// fastsim mode
+	if (fastsim && fastsim->fastsim_mode ()) {
+		fastsim->set_interrupt (_v);
+		return;
+	}
+
+    for (uint32 i = 0; i < hw_num_ctxt; i++)
+    {   
+        if (thread_id[i] == tid)
+        {
+            ivec[i].set (_v);
+            return;
+        }
+    }
+    
+    FAIL_MSG("Interrupt sent to the wrong sequencer!");
+}
+
+int64
+sequencer_t::get_interrupt (uint8 tid) {
+	return ivec[tid].get ();
+}
+
+int64
+sequencer_t::get_shadow_interrupt () {
+	return shadow_ivec.get ();
+}
+
+
+mem_hier_handle_t*
+sequencer_t::get_mem_hier () {
+	return (p->get_mem_hier ());
+}
+
+eventq_t*
+sequencer_t::get_eventq () {
+	return eventq;
+}
+
+void 
+sequencer_t::schedule () {
+	uint32 execute_avail = g_conf_max_issue;
+	dynamic_instr_t *d_instr;
+
+	if (iwindow->empty ()) return;
+	
+	uint32 last_created = iwindow->get_last_created ();
+	uint32 index = iwindow->get_last_committed ();
+
+	index = iwindow->window_increment (index);
+	d_instr = iwindow->peek (index);
+
+	while (execute_avail > 0 && d_instr) {
+		mai_instruction_t *mai_instr = d_instr->get_mai_instruction ();
+		fu_t *fu = d_instr->get_fu ();
+		bool b = true;
+
+		if (d_instr->get_sync () && iwindow->head () != d_instr)
+			b = false;
+
+		if (b && d_instr->is_load () && g_conf_issue_load_commit && 
+			iwindow->head () != d_instr) 
+			b = false;
+
+		if (b && d_instr->is_store () && g_conf_issue_store_commit && 
+			iwindow->head () != d_instr)
+			b = false;
+
+		if (b && g_conf_issue_non_spec && d_instr->speculative ())
+			b = false;
+
+		if (b && d_instr->is_load () && g_conf_issue_loads_non_spec &&
+			d_instr->speculative ()) 
+			b = false;
+
+		if (b && d_instr->is_store () && g_conf_issue_stores_non_spec &&
+			d_instr->speculative ())
+			b = false;
+
+		if (b && d_instr->get_pipe_stage () == PIPE_WAIT &&
+			mai_instr->readyto_execute () && fu->get_fu ()) {
+
+			execute_avail--;
+			d_instr->set_pipe_stage (PIPE_EXECUTE);
+
+			eventq->insert (d_instr, fu->get_latency ());
+
+		} else if (g_conf_issue_inorder) {
+			break;
+		}	
+
+		// need to reach here.
+		index = iwindow->window_increment (index);
+		if (index == iwindow->window_increment (last_created))
+			d_instr = 0;
+		else 
+			d_instr = iwindow->peek (index);
+	}
+}
+
+fastsim_t*
+sequencer_t::get_fastsim (void) {
+	return fastsim;
+}
+
+
+void
+sequencer_t::write_checkpoint(FILE *file) 
+{
+	fprintf(file, "%llu %d\n", ivec.get(), ivec.is_valid());
+    ctrl_flow->write_checkpoint(file);
+}
+
+void
+sequencer_t::read_checkpoint(FILE *file)
+{
+	uint64 temp_ivec;
+	uint32 temp_valid;
+	fscanf(file, "%llu %d\n", &temp_ivec, &temp_valid);
+	if (temp_valid)
+		ivec.set(temp_ivec);
+	else
+		ivec.invalidate();
+	
+    ctrl_flow->read_checkpoint(file);
+}
+
+void 
+sequencer_t::reset_interrupt (void) {
+	ivec.invalidate ();
+}
+
+void 
+sequencer_t::reset_shadow_interrupt (void) {
+	shadow_ivec.invalidate ();
+}
+
+// Switch sequencer to a new Simics/OS visible CPU
+void
+sequencer_t::switch_to_thread(mai_t *_mai) {
+
+	mai = _mai;
+	if (!mai) {
+		set_fu_status(FETCH_GPC_UNKNOWN);
+		return;
+	}
+	
+	fastsim = p->get_fastsim(id);
+	
+	mai->set_reorder_buffer_size (g_conf_window_size);
+
+	// Copies new mai pc/nps
+	ctrl_flow->fix_spec_state();
+
+	reset_fu_status(FETCH_GPC_UNKNOWN);
+	
+	wait_after_switch = g_conf_thread_switch_latency;
+}
+
+proc_stats_t *
+sequencer_t::get_pstats()
+{
+	return p->get_pstats(id);	
+}
+
+uint32
+sequencer_t::get_id()
+{
+	return id;
+}
+
+fetch_buffer_t *
+sequencer_t::get_fetch_buffer()
+{
+	return fetch_buffer;
+}
+
+void
+sequencer_t::prepare_for_checkpoint()
+{
+	ASSERT(!wait_on_checkpoint);
+	
+	if (mai && mai->get_tl() > 0)
+		wait_on_checkpoint = true;
+	else
+		set_fu_status(FETCH_PENDING_CHECKPOINT);
+	
+	STAT_INC(get_pstats()->stat_intermediate_checkpoint);
+ }
+
+bool
+sequencer_t::ready_for_checkpoint()
+{
+	ASSERT(get_fu_status(FETCH_PENDING_CHECKPOINT) || wait_on_checkpoint);
+
+	if (!mai) {
+		ASSERT(iwindow->empty());
+		ASSERT(!wait_on_checkpoint);
+		return true;
+	}
+	
+	if (!iwindow->empty())
+		return false;
+	if (!st_buffer_empty())
+		return false;
+	if (mai->get_tl() > 0)
+		return false;
+	if (wait_on_checkpoint)
+		return false;
+	
+	return true;
+}
