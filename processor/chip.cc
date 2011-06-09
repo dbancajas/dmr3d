@@ -263,6 +263,7 @@ chip_t::handle_simulation()
     {
         //print_stats ();
         //mem_hier->print_stats();
+	mem_hier->printStats(); //dump DRAMSim2 stats
         mai[0]->break_sim (0);
     }
     

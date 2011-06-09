@@ -426,7 +426,11 @@ mem_hier_handle_t::static_lsq_operate (conf_object_t *proc_obj, conf_object_t *s
 	mem_hier_handle_t *mem_hier = proc->get_mem_hier ();
 	return ( mem_hier->lsq_operate (proc_obj, space, map, mem_op) );
 }
-
+void 
+mem_hier_handle_t::printStats()
+{
+	mem_hier->printStats(); //dump DRAMSim2 stats in stdout
+}
 void
 mem_hier_handle_t::print_stats (void)
 {

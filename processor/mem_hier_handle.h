@@ -24,7 +24,7 @@ private:
 	mem_hier_t *mem_hier;
 	string checkpoint_file;
 	string mh_runtime_config_file;
-    chip_t    *chip;
+    	chip_t    *chip;
 
 public:
 	//
@@ -77,11 +77,14 @@ public:
 	void set_checkpoint_file (string filename) { }
 	string get_checkpoint_file () { return ""; }
 
-    // Checkpoint utilities
+	// DRAMSim2 utilities
+	void printStats();
+
+    	// Checkpoint utilities
 	void stall_mem_hier();
-    bool is_mem_hier_quiet();
+    	bool is_mem_hier_quiet();
     
-    void clear_stats();
+    	void clear_stats();
 	
 	tick_t get_mem_g_cycles();
 	void profile_commits(dynamic_instr_t *dinst);

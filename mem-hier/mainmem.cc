@@ -25,6 +25,8 @@
 #include "transaction.h"
 #include "config_extern.h"
 #include "stats.h"
+#include "counter.h"
+#include "histogram.h"
 
 template <class prot_sm_t, class msg_t>
 const uint8 main_mem_t<prot_sm_t, msg_t>::cache_link;  
@@ -44,6 +46,7 @@ main_mem_t<prot_sm_t, msg_t>::main_mem_t(string name, uint32 num_links)
 	stats = new stats_t();
 	stats_print_enqueued = false;
 	stat_requests = stats->COUNTER_BASIC("m_mem requests", "# of requests made to main mem");
+	stat_memlatency_histo = stats->HISTO_EXP2("m_mem latency", "distribution of main mem latencies",15,1,1);
 }
 
 template <class prot_sm_t, class msg_t>
@@ -80,6 +83,9 @@ main_mem_t<prot_sm_t, msg_t>::message_arrival(message_t *message)
 	e->enqueue();
 	num_requests++;
 	STAT_INC(stat_requests);	
+
+	lMap[msg->address]=external::get_current_cycle();
+
 	return StallNone;
 }
 
@@ -94,6 +100,9 @@ main_mem_t<prot_sm_t, msg_t>::event_handler(_event_t *e)
 	ASSERT(mem->num_requests > 0);
 	mem->num_requests--;
 	
+
+	mem->inc_address(msg->address);
+	mem->inc_address(msg->address);
 
 	if (msg->get_type() == msg_t::WriteBack) {
 		if (g_conf_cache_data) {
@@ -186,6 +195,7 @@ main_mem_t<prot_sm_t, msg_t>::write_memory(addr_t addr, size_t size, uint8 *data
 	external::write_to_memory(addr, size, data);
 	VERBOSE_DATA(get_cname(), external::get_current_cycle(), 
 				addr, size, data);
+
 }
 
 // Reads memory, stores into data array
@@ -201,6 +211,8 @@ main_mem_t<prot_sm_t, msg_t>::read_memory(addr_t addr, size_t size, uint8 *data)
 	external::read_from_memory(addr, size, data);
 	VERBOSE_DATA(get_cname(), external::get_current_cycle(), 
 				addr, size, data);
+
+
 }
 
 template <class prot_sm_t, class msg_t>
@@ -213,4 +225,13 @@ main_mem_t<prot_sm_t, msg_t>::get_latency(message_t *message)
 	return (g_conf_randomize_mm) ?
 		(latency + random() % g_conf_random_mm_dist) :
 		latency;
+}
+
+template <class prot_sm_t, class msg_t>
+void
+main_mem_t<prot_sm_t, msg_t>::inc_address(addr_t addr){
+	ASSERT(external::get_current_cycle() > lMap[addr]);	
+	stat_memlatency_histo->inc_total(1, external::get_current_cycle() - lMap[addr]);
+	lMap.erase(addr);
+	
 }

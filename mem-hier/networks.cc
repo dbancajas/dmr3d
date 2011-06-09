@@ -1402,7 +1402,7 @@ void mem_hier_t::create_cmp_incl_3l()
 #ifndef COMPILE_CMP_INCL_3L
     ASSERT_MSG(0, "COMPILE_CMP_INCL_3L not defined\n");
 #else
-    typedef cmp_incl_3l_l1_protocol_t L1prot_t;
+    	typedef cmp_incl_3l_l1_protocol_t L1prot_t;
 	typedef cmp_incl_3l_l2_protocol_t L2prot_t;
 	typedef cmp_incl_3l_l3_protocol_t L3prot_t;
 	
@@ -1419,8 +1419,8 @@ void mem_hier_t::create_cmp_incl_3l()
 	
 	uint32 proc_index[num_processors];
 	
-    uint32 num_l1_cache = 2 * num_processors;
-    uint32 num_l2_cache = num_processors;
+    	uint32 num_l1_cache = 2 * num_processors;
+    	uint32 num_l2_cache = num_processors;
 
 	if (g_conf_sep_kern_cache) {
 		num_l1_cache += 2 * num_processors;
@@ -1694,14 +1694,12 @@ void mem_hier_t::create_cmp_incl_3l()
     
 }
 
-
-
 void mem_hier_t::create_cmp_incl(bool write_through)
 {
 #ifndef COMPILE_CMP_INCL
-    ASSERT_MSG(0, "COMPILE_CMP_INCL not defined\n");
+    	ASSERT_MSG(0, "COMPILE_CMP_INCL not defined\n");
 #else
-    typedef cmp_incl_l1_protocol_t L1prot_t;
+    	typedef cmp_incl_l1_protocol_t L1prot_t;
 	typedef cmp_incl_l2_protocol_t L2prot_t;
 	
 	link_desc_t normal_link;
@@ -1719,6 +1717,7 @@ void mem_hier_t::create_cmp_incl(bool write_through)
 	
 	char num[2];
 	string proc = "proc";
+
 	for (uint32 i = 0; i < num_processors; i++) {
 		ASSERT(get_cpu_object(i));
 		sprintf(num, "%u", i);
@@ -1726,11 +1725,11 @@ void mem_hier_t::create_cmp_incl(bool write_through)
 	}
 	
 	uint32 *dcache_index = new uint32[num_processors];
-    uint32 kdcache_index[num_processors];
+    	uint32 kdcache_index[num_processors];
 	
 	// Add up all the D-Cache
 	cache_config_t cache_conf;
-    cache_conf.bank_leak_energy = 0;
+    	cache_conf.bank_leak_energy = 0;
     
 	cache_conf.assoc = g_conf_l1d_assoc;
 	cache_conf.lsize = g_conf_l1d_lsize;
@@ -1743,14 +1742,14 @@ void mem_hier_t::create_cmp_incl(bool write_through)
 	cache_conf.requests_per_mshr = g_conf_l1d_requests_per_mshr;
 	cache_conf.writeback_buffersize = g_conf_l1d_writeback_buffers;
 	cache_conf.bank_leak_energy = g_conf_l1d_bank_leak;
-    cache_conf.bits_out = 64;
+    	cache_conf.bits_out = 64;
     
 	// Set up link descriptor between proc and dcache
 	link_desc_t proc_dcache_link[1];
 	proc_dcache_link[0] = normal_link;
 	proc_dcache_link[0].link_id = proc_t<L1prot_t, simple_proc_msg_t>::dcache_link;
     
-    link_desc_t proc_kdcache_link[1];
+    	link_desc_t proc_kdcache_link[1];
 	proc_kdcache_link[0] = normal_link;
 	proc_kdcache_link[0].link_id = proc_t<L1prot_t, simple_proc_msg_t>::k_dcache_link;
 	
@@ -1776,19 +1775,19 @@ void mem_hier_t::create_cmp_incl(bool write_through)
 	    sprintf(num, "%u", i);	
         if (write_through)
             dcache_index[i] = add_device(new cmp_incl_wt_l1_cache_t(cache+num,&cache_conf, i, get_cpu_object(i), 0));
-		else 
+	else 
             dcache_index[i] = add_device(new cmp_incl_l1_cache_t(cache+num,&cache_conf, i, get_cpu_object(i), 0));
-		join_devices(proc_index[i], dcache_index[i], 1, proc_dcache_link, 1, dcache_proc_link);
+		
+	join_devices(proc_index[i], dcache_index[i], 1, proc_dcache_link, 1, dcache_proc_link);
         devices[dcache_index[i]]->create_direct_link(L1prot_t::interconnect_link, 
             static_cast<device_t *> (icn));
         
-        if (g_conf_sep_kern_cache) {
+       if (g_conf_sep_kern_cache) {
 			kdcache_index[i] = add_device(new cmp_incl_l1_cache_t(kcache+num,&cache_conf, i, get_cpu_object(i), 0));
 			join_devices(proc_index[i], kdcache_index[i], 1, proc_kdcache_link, 1, dcache_proc_link);
 		    devices[kdcache_index[i]]->create_direct_link(L1prot_t::interconnect_link, 
                 static_cast<device_t *> (icn));
-        	
-		}
+	}
 	}
 	
     // Set up the IDs
@@ -1890,7 +1889,8 @@ void mem_hier_t::create_cmp_incl(bool write_through)
         
     
     icn->setup_interconnect();
-    uint32 mainmem_index = add_device(new main_mem_t<L2prot_t, simple_mainmem_msg_t>("mainmem", num_processors + 1));
+    //uint32 mainmem_index = add_device(new main_mem_t<L2prot_t, simple_mainmem_msg_t>("mainmem", num_processors + 1));
+    uint32 mainmem_index = add_device(dramptr);
     
     link_desc_t L2_mem[2];
 	L2_mem[0] = buffered_link;

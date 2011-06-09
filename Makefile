@@ -11,7 +11,7 @@ MODULE_DIR = ms2sim_smt
 MODULE_NAME = ms2sim_smt
 
 MODULE_CFLAGS = -DTARGET_SPARC_V9 -Wall -g -O0 -g3
-MODULE_CFLAGS = -DTARGET_SPARC_V9 -Wall  -O3
+#MODULE_CFLAGS = -DTARGET_SPARC_V9 -Wall  -O3
 MODULE_LDFLAGS = 
 MODULE_CLASSES = ms2sim
 
@@ -41,11 +41,11 @@ PROTOCOLS =
 #PROTOCOLS += UNIP_ONE
 #PROTOCOLS += MP_ONE_MSI
 #PROTOCOLS += MP_TWO_MSI
-PROTOCOLS += UNIP_TWO
+#PROTOCOLS += UNIP_TWO
 #PROTOCOLS += UNIP_TWO_DRAM
 #PROTOCOLS += UNIP_ONE_COMPLEX
-#PROTOCOLS += CMP_INCL
-#PROTOCOLS += CMP_INCL_WT
+PROTOCOLS += CMP_INCL
+PROTOCOLS += CMP_INCL_WT
 #PROTOCOLS += CMP_EXCL
 #PROTOCOLS += CMP_EX_3L
 #PROTOCOLS += CMP_INCL_3L
@@ -143,7 +143,8 @@ ifneq (,$(findstring CMP_INCL_3L,$(PROTOCOLS)))
 endif
 
 
-PROCESSOR_VPATH = /users/dean/research/ece5750/gems-2.1/simics3workspace/modules/ms2sim_smt/processor:/users/dean/research/ece5750/gems-2.1/simics3workspace/modules/ms2sim_smt/processor/csp_alg
+#PROCESSOR_VPATH = /users/dean/research/ece5750/gems-2.1/simics3workspace/modules/ms2sim_smt/processor:/users/dean/research/ece5750/gems-2.1/simics3workspace/modules/ms2sim_smt/processor/csp_alg
+PROCESSOR_VPATH =$(SRC_BASE)/ms2sim_smt/processor:$(SRC_BASE)/ms2sim_smt/processor/csp_alg
 
 SRC_FILES += dynamic.cc iwindow.cc mai.cc mai_instr.cc \
              chip.cc sequencer.cc startup.cc fu.cc \
@@ -177,7 +178,7 @@ SRC_FILES += power_obj.cc power_profile.cc  \
 
 
 
-EXTRA_VPATH = /users/dean/research/ece5750/gems-2.1/simics3workspace/modules/ms2sim_smt/common:$(PROCESSOR_VPATH):$(MEMHIER_VPATH):$(POWER_VPATH)
+EXTRA_VPATH = $(SRC_BASE)/ms2sim_smt/common:$(PROCESSOR_VPATH):$(MEMHIER_VPATH):$(POWER_VPATH)
 #EXTRA_VPATH = $(COMMON_VPATH):$(PROCESSOR_VPATH):$(MEMHIER_VPATH)
 
 SIMICS_API = 3.0

@@ -187,6 +187,7 @@ public:
 	void clear_pending_event(uint32 event);	// Mark an event as non-pending
 	bool occurred(uint32 event);			// Did event occur?
 	bool is_pending(uint32 event);			// Is event pending?
+	
 	uint32 get_events();
 	uint32 get_pending_events();
 	

@@ -23,6 +23,7 @@ class main_mem_t : public device_t {
 	
  public:
 	typedef event_t<msg_t, main_mem_t> _event_t;
+	typedef map<addr_t,uint64_t,std::less<addr_t> > LatencyMap2;
 
 	main_mem_t(string name, uint32 num_links);	
 	virtual ~main_mem_t() { }
@@ -39,9 +40,11 @@ class main_mem_t : public device_t {
  protected:
 	tick_t latency;
 	uint32 num_requests; // current number of outstanding requests
+	LatencyMap2 lMap;	
 
 	void write_memory(addr_t addr, size_t size, uint8 *data);
 	void read_memory(addr_t addr, size_t size, uint8 *data);
+	void inc_address(addr_t addr);
 
 	static void event_handler(_event_t *e);
 	
@@ -50,6 +53,7 @@ class main_mem_t : public device_t {
 	//stats_t *stats; //profiling stuff
 	bool stats_print_enqueued;
 	st_entry_t *stat_requests;
+	histo_1d_t *stat_memlatency_histo;
 };
 
 #include "mainmem.cc"

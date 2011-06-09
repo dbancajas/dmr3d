@@ -16,6 +16,8 @@
 #include "verbose_level.h"
 #include "transaction.h"
 #include "config_extern.h"
+#include "counter.h"
+#include "histogram.h"
 #include "stats.h"
 #include "Callback.h"
 #include "MemorySystem.h"
@@ -31,12 +33,14 @@ template <class prot_sm_t, class msg_t>
 dram_t<prot_sm_t,msg_t>::dram_t(string name, uint32 num_links)
 	:device_t(name,num_links)
 {
-	mem = new MemorySystem(0, "ini/DDR2_micron_16M_8b_x8_sg3E.ini","system.ini","/users/dean/Dropbox/ms2sim_smt/mem-hier/DRAMSim2/","/users/dean/Dropbox/ms2sim_smt/mem-hier/resultsfile",1024);
+	mem = new MemorySystem(0, "ini/DDR2_micron_16M_8b_x8_sg3E.ini","system.ini","/users/dean/Dropbox/ms2sim_smt/mem-hier/DRAMSim2/","/users/dean/Dropbox/ms2sim_smt/mem-hier/resultsfile",1024,4);
        	Callback_t *read_cb = new Callback<dram_t<prot_sm_t,msg_t>, void, uint, uint64_t, uint64_t,uint32_t>(this, &dram_t<prot_sm_t,msg_t>::read_complete);
         Callback_t *write_cb = new Callback<dram_t<prot_sm_t,msg_t>, void, uint, uint64_t, uint64_t,uint32_t>(this, &dram_t<prot_sm_t,msg_t>::write_complete);
 	mem->RegisterCallbacks(read_cb, write_cb);
-	
+
+	g_cycles=0;	
 	tMap.clear(); 
+	lMap.clear(); 
 	transId=0;
 	newTransId=0;
 	//DRAM Stats
@@ -44,9 +48,18 @@ dram_t<prot_sm_t,msg_t>::dram_t(string name, uint32 num_links)
         stats = new stats_t();
         stats_print_enqueued = false;
         stat_requests = stats->COUNTER_BASIC("d_mem requests", "# of requests made to DRAMSim 2");
-
+	stat_dramlatency_histo = stats->HISTO_EXP2("dram latency", "distribution of dram latencies",10,1,1);
+	//stat_dramlatency_histo = stats->HISTO_UNIFORM("dram latency", "distribution of dram latencies",28,2,8);
+	stat_request_distrib = stats->HISTO_UNIFORM("processor request distribution latency", "distribution of request from CPUs",8,1,0);//parametrize this
+	cout<<"I am here!!!!\n";
+	num_processors = SIM_number_processors();
 }
 
+template <class prot_sm_t, class msg_t>
+void
+dram_t<prot_sm_t,msg_t>::printStats(){
+	mem->printStats(true);
+}
 
 template <class prot_sm_t, class msg_t>
 stall_status_t
@@ -83,6 +96,7 @@ dram_t<prot_sm_t,msg_t>::message_arrival(message_t * message)
         //e->enqueue();
 	newTransId=transId++;
 	tMap[newTransId]=e;	
+	lMap[newTransId]=external::get_current_cycle();
 
   	Transaction tr;
 
@@ -99,6 +113,7 @@ dram_t<prot_sm_t,msg_t>::message_arrival(message_t * message)
 	
         num_requests++;
         STAT_INC(stat_requests);
+	stat_request_distrib->inc_total(1,static_cast<uint32>(message->get_trans()->cpu_id));
 
 //send this request to dramsim
 
@@ -109,6 +124,7 @@ template <class prot_sm_t, class msg_t>
 void
 dram_t<prot_sm_t,msg_t>::advance_cycle(){
 	mem->update();
+	g_cycles++;
 	//cout<<"dean"<<endl;
 }
 
@@ -170,7 +186,6 @@ dram_t<prot_sm_t, msg_t>::event_handler(_event_t *e)
                 stall_status_t ret = dram->links[link]->send(msg);
                 ASSERT(ret == StallNone);
         }
-
 }
 
 template <class prot_sm_t, class msg_t>
@@ -241,6 +256,9 @@ dram_t<prot_sm_t, msg_t>::read_complete(uint id, uint64_t address, uint64_t cloc
 	//cout<<dec<<clock_cycle<<" transId: "<<transId<<endl;
 	tMap[transId]->enqueue(); //schedule event immediately
 	tMap.erase(transId);//delete entry in map
+	ASSERT(external::get_current_cycle() > lMap[transId]);
+	stat_dramlatency_histo->inc_total(1, external::get_current_cycle() - lMap[transId]);
+	lMap.erase(transId);//delete entry in map
 }
 
 template <class prot_sm_t, class msg_t>
@@ -251,6 +269,9 @@ dram_t<prot_sm_t, msg_t>::write_complete(uint id, uint64_t address, uint64_t clo
 	//cout<<clock_cycle<<" transId: "<<transId<<endl;
 	tMap[transId]->enqueue(); //schedule event immediately
 	tMap.erase(transId);//delete entry in map
+	ASSERT(external::get_current_cycle() > lMap[transId]);
+	stat_dramlatency_histo->inc_total(1, external::get_current_cycle() - lMap[transId]);
+	lMap.erase(transId);//delete entry in map
 }
 
 
@@ -259,4 +280,20 @@ void
 power_callback(double a, double b, double c, double d)
 {
         //printf("power callback: %0.3f, %0.3f, %0.3f, %0.3f\n",a,b,c,d);
+}
+
+template <class prot_sm_t, class msg_t>
+uint32
+get_add_latency(uint32 num_procs,uint32 num_controllers, uint32 rank, uint32 proc)
+{
+
+	if (g_conf_num_controllers==1)
+	{
+		return 0;
+	}
+	else 
+	{
+		return 2;	
+	}
+
 }

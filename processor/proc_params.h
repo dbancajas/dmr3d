@@ -126,7 +126,7 @@ CONF_V_INTEGER (num_user_seq, "Number of sequencers dedicated to user code", 0)
 CONF_V_INTEGER (thread_preempt, "Cycles before preempting thread", 50000)
 
 
-CONF_V_ARRAY_INT (chip_design, "Chip design specification", 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+CONF_V_ARRAY_INT (chip_design, "Chip design specification", 32, 8, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 CONF_V_ARRAY_INT (spin_loop_pcs, "PCs of spin loops", 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 CONF_V_INTEGER (mutex_locked_pc, "VPC of Solaris jump when mutex is locked", 0)
 CONF_V_INTEGER (kernel_idle_enter, "VPC of entering kernel idle loop", 0)

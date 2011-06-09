@@ -79,7 +79,7 @@ mem_hier_t::mem_hier_t(proc_object_t *_module)
 	
 	eventq = NULL;
 	g_cycles = 0;
-	dramptr = new dram_t<prot_t, simple_mainmem_msg_t>("dram", 1);;    
+	dramptr = new dram_t<prot_t, simple_mainmem_msg_t>("dram", 9);    
     
     mem_trans_array = new mem_trans_t *[g_conf_mem_trans_count];
     ASSERT(mem_trans_array);
@@ -339,8 +339,10 @@ void
 mem_hier_t::create_network() 
 {
 	init_network();
-	create_unip_two_default();
+	//create_unip_two_default();
+       	 create_cmp_incl(false);
 	return;//worst idea. get rid of this asap
+
 	if (g_conf_memory_topology == "unip-one-default")
 		create_unip_one_default();
 	else if (g_conf_memory_topology == "unip-one-dram"){
@@ -364,20 +366,21 @@ mem_hier_t::create_network()
 	else if (g_conf_memory_topology == "msi-two-split")
 		create_two_level_split_mp();
 	else if (g_conf_memory_topology == "unip-one-cachedata")
-		create_unip_one_cachedata();
+		//create_unip_one_cachedata(); no equiv function for this
+		create_two_level_split_mp();//dummy only
 	else if (g_conf_memory_topology == "cmp_incl")
-        create_cmp_incl(false);
-    else if (g_conf_memory_topology == "cmp_incl_wt")
-        create_cmp_incl(true);
+        	create_cmp_incl(false);
+        else if (g_conf_memory_topology == "cmp_incl_wt")
+       	 	create_cmp_incl(true);
 	else if (g_conf_memory_topology == "cmp_excl")
-        create_cmp_excl();
+        	create_cmp_excl();
  	else if (g_conf_memory_topology == "cmp_excl_3l")
-        create_cmp_excl_3l();
-    else if (g_conf_memory_topology == "cmp_incl_3l")
-        create_cmp_incl_3l();
+        	create_cmp_excl_3l();
+    	else if (g_conf_memory_topology == "cmp_incl_3l")
+       		create_cmp_incl_3l();
 	else if (g_conf_memory_topology == "cmp_incl_l2banks")
-        create_cmp_incl_l2banks();
-    else
+        	create_cmp_incl_l2banks();
+    	else
 		ASSERT_MSG(0, "UNDEFINED PROTOCOL");
 }
 
@@ -406,14 +409,11 @@ mem_hier_t::advance_cycle()
             g_conf_mem_hier_warmup = 0;
         }
 	}
-	//dram_t<prot_t, simple_mainmem_msg_t> *dramp;
     if (g_conf_hasdram){
-	//dramp =(dram_t<prot_t, simple_mainmem_msg_t> *) (devices[4]);
-	//dramp =static_cast<dram_t<prot_t, simple_mainmem_msg_t> *>(devices[4]);
 	if(dramptr==NULL)
 		ASSERT_MSG(0,"DRAM not initialized!");
+
 	dramptr->advance_cycle();
-	//devices[4]->advance_cycle();
     }
     if (!g_conf_use_processor) {
         if (is_initialized) {
@@ -484,7 +484,6 @@ void mem_hier_t::handle_simulation()
     uint64 total_cycles = g_cycles;
     uint64 proc_commit;
 
-
     // SPIN LOOP CHECK
     for (uint32 i = 0; i < num_processors; i++) {
         sequencer_t *seq = module_obj->chip->get_sequencer(i);
@@ -533,11 +532,10 @@ void mem_hier_t::handle_simulation()
         (g_conf_run_cycles && total_cycles >= (uint64) g_conf_run_cycles) || 
         (g_conf_run_user_commits && user_commits >= (uint64) g_conf_run_user_commits))
     {
+	//cout<<"simulation done!!!!!!!!!!!!!!!!!!!!!\n"<<endl;
         module_obj->get_stats();
         SIM_break_simulation("Done");
     }
-    
-    
 }
 
 
@@ -1091,6 +1089,12 @@ mem_hier_t::print_stats()
 		devices[i]->print_stats();
 	}
     profiles->print();
+}
+void
+mem_hier_t::printStats(){
+
+	//call DRAMSim2 dump stats
+	dramptr->printStats();	
 }
 	
 void

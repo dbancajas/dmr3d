@@ -38,6 +38,7 @@ class cache_t;
 class cache_bank_t;
 class line_t;
 class unip_two_l1d_prot_sm_t;
+class cmp_incl_l2_protocol_t;
 template <class prot_t> class tcache_t;
 template <class type_t> class mshr_t;
 template <class type_t> class mshrs_t;

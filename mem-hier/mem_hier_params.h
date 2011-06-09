@@ -1,17 +1,19 @@
 // Select the memory topology and protocols
 // See README.txt for current reasonable options
 //CONF_V_STRING(memory_topology, "mem topology and protocol", "unip-one-default")
-CONF_V_STRING(memory_topology, "mem topology and protocol", "unip-one-two")
+//CONF_V_STRING(memory_topology, "mem topology and protocol", "unip-one-two")
+CONF_V_STRING(memory_topology, "mem topology and protocol", "cmp_incl")
 CONF_V_BOOL(hasdram, "uses dram", true)
+CONF_V_INTEGER(num_controllers,"number of memory controllers",1)
 
 // Not all cache params below are used for all protocols/configs
 CONF_V_INTEGER(l1d_latency, "L1D hit latency", 1)
 CONF_V_INTEGER(l1d_assoc, "L1D associativity", 2)
-CONF_V_INTEGER(l1d_size, "L1D size (Kbytes)", 128)
+CONF_V_INTEGER(l1d_size, "L1D size (Kbytes)", 64)
 CONF_V_INTEGER(l1d_banks, "# L1D banks", 2)
 CONF_V_INTEGER(l1d_bank_bw_inv, "Inv of L1D bank b/w (cycles/req/bank); 0 for inf", 1)
 CONF_V_INTEGER(l1d_req_q_size, "# of request queue entries per L1D bank", 0)
-CONF_V_INTEGER(l1d_lsize, "L1D line size (bytes)", 64)
+CONF_V_INTEGER(l1d_lsize, "L1D line size (bytes)", 32)
 CONF_V_INTEGER(l1d_num_mshrs, "# L1D MSHRs", 8)
 CONF_V_INTEGER(l1d_requests_per_mshr, "# L1D piggybacked requests per MSHR", 8)
 CONF_V_INTEGER(l1d_writeback_buffers, "# L1D write-back buffer slote", 8);
@@ -30,7 +32,7 @@ CONF_V_INTEGER(l1i_next_line_pref_num, "L1I # of lines to prefetch", 1)
 
 CONF_V_INTEGER(l2_latency, "L2 latency", 6)
 CONF_V_INTEGER(l2_assoc, "L2 associativity", 4)
-CONF_V_INTEGER(l2_size, "L2 size (Kbytes)", 1024)
+CONF_V_INTEGER(l2_size, "L2 size (Kbytes)", 256)
 CONF_V_INTEGER(l2_banks, "# L2 banks", 4)
 CONF_V_INTEGER(l2_bank_bw_inv, "Inv of L2 bank b/w (cycles/req/bank); 0 for inf", 4)
 CONF_V_INTEGER(l2_req_q_size, "# of request queue entries per L2 bank", 0)
@@ -44,7 +46,7 @@ CONF_V_INTEGER(l2dir_size, "FIXED Setup of L2 Directory Size", 0)
 
 CONF_V_INTEGER(l3_latency, "L3 latency", 20)
 CONF_V_INTEGER(l3_assoc, "L3 associativity", 16)
-CONF_V_INTEGER(l3_size, "L3 size (Kbytes)", 4096)
+CONF_V_INTEGER(l3_size, "L3 size (Kbytes)", 512)
 CONF_V_INTEGER(l3_banks, "# L3 banks", 4)
 CONF_V_INTEGER(l3_bank_bw_inv, "Inv of L3 bank b/w (cycles/req/bank); 0 for inf", 4)
 CONF_V_INTEGER(l3_req_q_size, "# of request queue entries per L3 bank", 0)

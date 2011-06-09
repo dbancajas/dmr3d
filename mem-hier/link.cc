@@ -7,7 +7,7 @@
  *
  */
 
-/* description:    unidirectional networl 'links' between devices 
+/* description:    unidirectional network 'links' between devices 
  * initial author: Philip Wells 
  *
  */

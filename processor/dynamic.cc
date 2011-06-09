@@ -1837,6 +1837,7 @@ bool
 dynamic_instr_t::unsafe_load (void) {
 	ASSERT (is_load ());
 
+        return true;
     if (ainfo == AI_ALT_SPACE)
         return true;
 	if ((opcode == i_ldd || opcode == i_ldda) && !g_conf_ldd_std_safe)

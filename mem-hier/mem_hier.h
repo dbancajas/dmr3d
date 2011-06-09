@@ -25,7 +25,8 @@ struct link_descriptor {
 
 typedef struct link_descriptor link_desc_t;
 //class unip_two_l1d_prot_sm_t;
-typedef unip_two_l1d_prot_sm_t prot_t;
+//typedef unip_two_l1d_prot_sm_t prot_t;
+typedef cmp_incl_l2_protocol_t prot_t;
 typedef simple_mainmem_msg_t msg_t;
 //class device_t;
 
@@ -71,6 +72,7 @@ public:
 
 	void print_stats();
 	void clear_stats();
+	void printStats();//only calls DRAMSim2 dump stats
 	
 	proc_object_t *get_module_obj();
 	// Pointer to the memory hierarchy object
