@@ -21,6 +21,8 @@ class dram_t : public device_t {
 	typedef event_t<msg_t,dram_t> _event_t;
 	typedef map<uint32_t,_event_t*,std::less <int> > TransactionMap;
 	typedef map<uint32_t,uint64_t,std::less<int> > LatencyMap;
+	typedef map<uint64_t,uint64_t,std::less<int> > AddrLatencyMap;	
+	
 	
 	dram_t(string name, uint32 num_links);
 	virtual ~dram_t() { }
@@ -43,6 +45,9 @@ class dram_t : public device_t {
 	tick_t g_cycles;
 	TransactionMap tMap;//transaction map
 	LatencyMap lMap;
+	LatencyMap numaMap; //numa additional latency map
+	AddrLatencyMap returnMap;//transaction address and cycle return from dram
+	AddrLatencyMap returnLatency;
 	tick_t latency;
 	uint32 num_requests; //current number of outstanding requests
 	vector<msg_t> queue; //queue of transaction waiting for callbacks before firing event	
@@ -57,10 +62,13 @@ class dram_t : public device_t {
 	void read_complete(uint id, uint64_t address, uint64_t clock_cycle, uint32_t transId);//callback for dramsim
 	void write_complete(uint id, uint64_t address, uint64_t clock_cycle, uint32_t transId);//callback for dramsim
 	void power_callback(double a, double b, double c, double d);//power callback for dramsim
-	uint32 get_add_latency(uint32 num_procs,uint32 num_controllers, uint32 rank, uint32 proc);//returns additional latency due to NUMA
+	int get_add_latency(unsigned int proc, uint64_t addr);//returns additional latency due to NUMA
 
 	//stats stuff
 	st_entry_t *stat_requests;	
+	st_entry_t *stat_neighbor;
+	st_entry_t *stat_remote;
+	st_entry_t *stat_local;
 	histo_1d_t *stat_dramlatency_histo;
 	histo_1d_t *stat_request_distrib;
 
