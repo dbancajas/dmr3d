@@ -41,6 +41,9 @@ dram_t<prot_sm_t,msg_t>::dram_t(string name, uint32 num_links)
 	g_cycles=0;	
 	tMap.clear(); 
 	lMap.clear(); 
+	numaMap.clear();
+	returnMap.clear();
+	returnLatency.clear();
 	transId=0;
 	newTransId=0;
 	//DRAM Stats
@@ -48,6 +51,9 @@ dram_t<prot_sm_t,msg_t>::dram_t(string name, uint32 num_links)
         stats = new stats_t();
         stats_print_enqueued = false;
         stat_requests = stats->COUNTER_BASIC("d_mem requests", "# of requests made to DRAMSim 2");
+        stat_local = stats->COUNTER_BASIC("d_mem local requests", "# of requests made to local controller");
+        stat_neighbor = stats->COUNTER_BASIC("d_mem neighbor(1-hop) requests", "# of requests made to neighboring controller");
+        stat_remote = stats->COUNTER_BASIC("d_mem remote(2-hops) requests", "# of requests made to a remote controller");
 	stat_dramlatency_histo = stats->HISTO_EXP2("dram latency", "distribution of dram latencies",10,1,1);
 	//stat_dramlatency_histo = stats->HISTO_UNIFORM("dram latency", "distribution of dram latencies",28,2,8);
 	stat_request_distrib = stats->HISTO_UNIFORM("processor request distribution latency", "distribution of request from CPUs",8,1,0);//parametrize this
@@ -61,12 +67,13 @@ dram_t<prot_sm_t,msg_t>::printStats(){
 	mem->printStats(true);
 }
 
+
 template <class prot_sm_t, class msg_t>
 stall_status_t
 dram_t<prot_sm_t,msg_t>::message_arrival(message_t * message)
 {
 	msg_t *msg = static_cast <msg_t *> (message);
-
+	unsigned int cpu_id = static_cast<uint32>(message->get_trans()->cpu_id);
 
         VERBOSE_OUT(verb_t::mainmem,
                     "%10s @ %12llu 0x%016llx: mainmem message_arrival() %s\n",
@@ -103,19 +110,25 @@ dram_t<prot_sm_t,msg_t>::message_arrival(message_t * message)
 	if (msg->get_type() == msg_t::WriteBack)
 	{
 		//tr = new Transaction(DATA_WRITE, msg->address, NULL, newTransId);
+		numaMap[newTransId]=get_add_latency(cpu_id,mem->getRank(msg->address));
   		mem->addTransaction(DATA_WRITE,msg->address,newTransId);
 	}
 	else
 	{
+		//numaMap[newTransId]=get_add_latency(cpu_id);
+		numaMap[newTransId]=get_add_latency(cpu_id,mem->getRank(msg->address));
   		mem->addTransaction(DATA_READ,msg->address,newTransId);
 		//tr = new Transaction(DATA_READ, msg->address, NULL, newTransId);
 	}
 	
         num_requests++;
         STAT_INC(stat_requests);
-	stat_request_distrib->inc_total(1,static_cast<uint32>(message->get_trans()->cpu_id));
+	stat_request_distrib->inc_total(1,cpu_id);
 
 //send this request to dramsim
+
+	//cout<<"Processor #"<<cpu_id<<" requests address "<<hex<<msg->address<<" at rank "<<mem->getRank(msg->address)<<" with delay ";
+	//cout<<dec<<get_add_latency(cpu_id,msg->address)<<endl;
 
         return StallNone;
 }
@@ -139,7 +152,9 @@ dram_t<prot_sm_t, msg_t>::event_handler(_event_t *e)
         ASSERT(dram->num_requests > 0);
         dram->num_requests--;
 
-
+	//cout<<"actually handled: "<<msg->address<<" on cycle "<<external::get_current_cycle()<<endl;
+	//stat_dramlatency_histo->inc_total(1, external::get_current_cycle() - returnMap[msg->address] + returnLatency[msg->address]);
+	
         if (msg->get_type() == msg_t::WriteBack) {
                 if (g_conf_cache_data) {
                         dram->write_memory(msg->address, msg->size, msg->data);
@@ -254,11 +269,18 @@ dram_t<prot_sm_t, msg_t>::read_complete(uint id, uint64_t address, uint64_t cloc
 {
 	//cout<<" read callback at address "<<hex<<address<<" cycle: ";
 	//cout<<dec<<clock_cycle<<" transId: "<<transId<<endl;
-	tMap[transId]->enqueue(); //schedule event immediately
+	//cout<<"transId returned: "<<external::get_current_cycle()<<" with address "<<address<<endl;
+	//tMap[transId]->enqueue(); //schedule event immediately
+	tMap[transId]->requeue(numaMap[transId]); //schedule event with additional delay
+	
 	tMap.erase(transId);//delete entry in map
 	ASSERT(external::get_current_cycle() > lMap[transId]);
 	stat_dramlatency_histo->inc_total(1, external::get_current_cycle() - lMap[transId]);
 	lMap.erase(transId);//delete entry in map
+	numaMap.erase(transId);
+
+	returnMap[address]=external::get_current_cycle();
+	returnLatency[address]=external::get_current_cycle()-lMap[transId]; //optimize this later
 }
 
 template <class prot_sm_t, class msg_t>
@@ -267,11 +289,17 @@ dram_t<prot_sm_t, msg_t>::write_complete(uint id, uint64_t address, uint64_t clo
 {
 	//cout<<" write callback at address "<<hex<<address<<" cycle: ";
 	//cout<<clock_cycle<<" transId: "<<transId<<endl;
-	tMap[transId]->enqueue(); //schedule event immediately
+	//cout<<"transId returned: "<<external::get_current_cycle()<<" with address "<<address<<endl;
+	//tMap[transId]->enqueue(); //schedule event immediately
+	tMap[transId]->requeue(numaMap[transId]); //schedule event with additional delay
 	tMap.erase(transId);//delete entry in map
 	ASSERT(external::get_current_cycle() > lMap[transId]);
 	stat_dramlatency_histo->inc_total(1, external::get_current_cycle() - lMap[transId]);
 	lMap.erase(transId);//delete entry in map
+	numaMap.erase(transId);
+
+	returnMap[address]=external::get_current_cycle();
+	returnLatency[address]=external::get_current_cycle()-lMap[transId]; //optimize this later
 }
 
 
@@ -283,9 +311,10 @@ power_callback(double a, double b, double c, double d)
 }
 
 template <class prot_sm_t, class msg_t>
-uint32
-get_add_latency(uint32 num_procs,uint32 num_controllers, uint32 rank, uint32 proc)
+int
+dram_t<prot_sm_t, msg_t>::get_add_latency(unsigned int proc, uint64_t addr)
 {
+	unsigned int delay = 4;
 
 	if (g_conf_num_controllers==1)
 	{
@@ -293,7 +322,60 @@ get_add_latency(uint32 num_procs,uint32 num_controllers, uint32 rank, uint32 pro
 	}
 	else 
 	{
-		return 2;	
+		unsigned int rank, distance,procGroupMap,memGroupMap;
+		rank = mem->getRank(addr);
+		procGroupMap = proc % g_conf_num_controllers;
+		memGroupMap = rank % g_conf_num_controllers;
+		//distance = abs(proc%g_conf_num_controllers - rank%g_conf_num_controllers);		
+		
+		if (procGroupMap == 0 && (memGroupMap == 1 || memGroupMap == 2))
+		{
+			distance = 1;
+			STAT_INC(stat_neighbor);
+		}
+		else if (procGroupMap == 0 && memGroupMap == 3)
+		{
+			distance = 2;
+			STAT_INC(stat_remote);
+		}
+		else if (procGroupMap == 1 && (memGroupMap == 0 || memGroupMap == 3))
+		{
+			distance = 1;
+			STAT_INC(stat_neighbor);
+		}
+		else if (procGroupMap == 1 && memGroupMap == 2)
+		{
+			distance = 2;
+			STAT_INC(stat_remote);
+		}
+		else if (procGroupMap == 2 && (memGroupMap == 0 || memGroupMap == 3))
+		{
+			distance = 1;
+			STAT_INC(stat_neighbor);
+		}
+		else if (procGroupMap == 2 && memGroupMap == 1)
+		{
+			distance = 2;
+			STAT_INC(stat_remote);
+		}
+		else if (procGroupMap == 3 && (memGroupMap == 1 || memGroupMap == 2))
+		{
+			distance = 1;
+			STAT_INC(stat_neighbor);
+		}
+		else if (procGroupMap == 3 && memGroupMap == 0)
+		{
+			distance = 2;
+			STAT_INC(stat_remote);
+		}
+		else if (procGroupMap == memGroupMap){
+			distance = 0;
+			STAT_INC(stat_local);
+		}
+		else 
+		{
+			ASSERT(0);//unknown mapping
+		}
+			return distance*delay;		
 	}
-
 }
