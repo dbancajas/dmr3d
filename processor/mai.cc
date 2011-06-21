@@ -46,10 +46,11 @@ mai_t::mai_t (conf_object_t *_cpu, chip_t *_p) {
 	p = _p;
 	shadow_cpu = 0;
 	idle_loop = false;
-    spin_loop = false;
+    	spin_loop = false;
 	u2 = false;
-    kstack_region = 0;
+    	kstack_region = 0;
 	mmu_obj = SIM_get_attribute(cpu, "mmu").u.object;
+	//FE_EXCEPTION_CHECK;
 	mmu_iface = (cmp_mmu_iface_t *) SIM_get_interface(mmu_obj, "cmp_mmu");
 
 	auto_probe_sim_parameters ();
@@ -59,17 +60,15 @@ mai_t::mai_t (conf_object_t *_cpu, chip_t *_p) {
 	v9_interface = (sparc_v9_interface_t *) 
 		SIM_get_interface(cpu, SPARC_V9_INTERFACE);
 	ASSERT (v9_interface);
-    syscall = 0x106; // Random assignment to keep aseets happy
+    	syscall = 0x106; // Random assignment to keep aseets happy
 	tl_reg = SIM_get_register_number (cpu, "tl");
 	tick_reg = SIM_get_register_number (cpu, "tick");
-    pstate_reg = SIM_get_register_number (cpu, "pstate");
-    pc_reg = SIM_get_register_number (cpu, "pc");
+    	pstate_reg = SIM_get_register_number (cpu, "pstate");
+    	pc_reg = SIM_get_register_number (cpu, "pc");
 	npc_reg = SIM_get_register_number (cpu, "npc");
-    stick_reg = SIM_get_register_number (cpu, "stick");
-	FE_EXCEPTION_CHECK;
+    	stick_reg = SIM_get_register_number (cpu, "stick");
+	//FE_EXCEPTION_CHECK;
 
-    
-	
 	if (SIM_get_pending_exception ()) {
 		DEBUG_OUT("u2?\n");
 		SIM_clear_exception();
@@ -78,13 +77,13 @@ mai_t::mai_t (conf_object_t *_cpu, chip_t *_p) {
 	}
 		
 	syscall = 0;
-    syscall_b4_interrupt = 0;
-	if (g_conf_csp_use_mmu || g_conf_override_idsr_read) {
+    	syscall_b4_interrupt = 0;
+	/*if (g_conf_csp_use_mmu || g_conf_override_idsr_read) {
 		v9_interface->install_user_class_asi_handler(cpu, static_demap_asi,
 			ASI_DMMU_DEMAP);
 		v9_interface->install_user_class_asi_handler(cpu, static_demap_asi,
 			ASI_IMMU_DEMAP);
-	}
+	}*/
     
     cpu_id = SIM_get_proc_no(cpu);
     supervisor_entry_step = 0;
@@ -116,8 +115,12 @@ void
 mai_t::auto_probe_sim_parameters () {
 
 	simics_lsq_enable (cpu, g_conf_use_internal_lsq);
-	if (!g_conf_memory_image_size);
+	if (g_conf_memory_image_size==0){
 		g_conf_memory_image_size = get_memory_image_size ();
+	}
+	//	cout<<endl<<"Mem Image Size: "<<g_conf_memory_image_size<<endl;
+	
+	
 }
 
 uint64
@@ -131,6 +134,10 @@ mai_t::get_memory_image_size () {
 	do {
 		sprintf(num, "%u", i);
 		obj = SIM_get_object (("memory"+string(num)).c_str());
+		if (!obj) {
+			SIM_clear_exception ();
+			obj = SIM_get_object ("memory");
+		}
 		if (!obj) {
 			SIM_clear_exception ();
 			obj = SIM_get_object (("server_memory"+string(num)).c_str());
