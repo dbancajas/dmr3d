@@ -109,7 +109,7 @@ CONF_V_STRING(processor_checkpoint_out, "Next Checkpoint File", "")
 CONF_V_BOOL (use_mmu, "use ms2sim mmu (U2 only)", false)
 CONF_V_BOOL (mmu_hw_fill, "try to hardware fill mmu misses (Linux only)", false)
 
-CONF_V_INTEGER (memory_image_size, "memory image size. 0 for auto-probe.", 0)
+CONF_V_INTEGER (memory_image_size, "memory image size. 0 for auto-probe.",0)
 
 CONF_V_BOOL (trace_commits, "print disassembled commits", false)
 CONF_V_BOOL (trace_pipe, "print disassembled instr at each stage", false)
