@@ -13,6 +13,14 @@
 #include "MemorySystem.h" 
 #include "device.h"
 
+#define PAGE_SIZE 4096 //OS default page size assumption
+#define CACHE_LSIZE 256
+#define ART_MAX 2000
+#define ART_MAX2 4000
+#define PSE_COST 800
+#define CLE_COST 150
+#define HOP_COST 10
+
 class mem_hier_t;
 template <class prot_t, class msg_t>
 class dram_t : public device_t {
@@ -51,6 +59,7 @@ class dram_t : public device_t {
 	tick_t latency;
 	uint32 num_requests; //current number of outstanding requests
 	vector<msg_t> queue; //queue of transaction waiting for callbacks before firing event	
+	bool dmbr; // true if dynamic memory bank remapping is enabled
 
 	int findIndex(int transId); //finds index in queue of messages
 
@@ -64,17 +73,61 @@ class dram_t : public device_t {
 	void power_callback(double a, double b, double c, double d);//power callback for dramsim
 	int get_add_latency(unsigned int proc, uint64_t addr);//returns additional latency due to NUMA
 
-	//stats stuff
+//ART = address remapping Table
+	struct ARTEntry {
+		unsigned int oldRank;
+		unsigned int newRank;
+		addr_t beginAdd;
+		addr_t endAdd;	
+		ARTEntry(unsigned int oR, unsigned int nR,addr_t bAdd, addr_t eAdd): oldRank(oR),newRank(nR),beginAdd(bAdd),endAdd(eAdd) {}
+	};
+//LAT = local access table
+	struct LATEntry {
+		addr_t beginAdd;
+		addr_t endAdd;
+		LATEntry(addr_t bAdd, addr_t eAdd): beginAdd(bAdd),endAdd(eAdd) {}
+	};
+	typedef vector<ARTEntry> ARTable;
+	typedef vector<LATEntry> LATable;
+
+	ARTable ART;
+	LATable LAT;	
+	vector<int> toggle; //toggle variable for assigning new Rank (2 choices)
+	void TryToRemap(bool isWrite, uint64_t addr, uint32_t _transId, uint32_t proc);
+	bool isLocalReq(unsigned int proc, uint64_t addr);
+	int inART(uint64_t addr);
+	bool onePageFrART(addr_t addr);
+	bool latViolation(addr_t addr);
+	addr_t Translate(addr_t addr,int proc,int callnum);
+	void createLAT(addr_t addr);
+	int createART(addr_t addr,unsigned int proc);
+	void expandART(addr_t addr);
+	
+	//dram stats
+	st_entry_t *stat_commits;
+	st_entry_t *stat_hwprefetch;
+	st_entry_t *stat_reusepages;	
+	st_entry_t *stat_expansion;	
+	st_entry_t *lat_viol;
+	st_entry_t *victim_stat;
+	st_entry_t *lat_cnt;
+	st_entry_t *art_cnt;
 	st_entry_t *stat_requests;	
 	st_entry_t *stat_neighbor;
 	st_entry_t *stat_remote;
 	st_entry_t *stat_local;
 	histo_1d_t *stat_dramlatency_histo;
+	histo_1d_t *stat_dramlatency_histo_local;
+	histo_1d_t *stat_dramlatency_histo_neighbor;
+	histo_1d_t *stat_dramlatency_histo_remote;
 	histo_1d_t *stat_request_distrib;
+	histo_1d_t *stat_local_histo;
+	histo_1d_t *stat_nb_histo;
+	histo_1d_t *stat_remote_histo;
+	histo_1d_t *stat_rank_histo;
 
 	bool stats_print_enqueued; //figure out what this is for
 };
 
 #include "dram.cc"
-
 #endif //_DRAM_H_

@@ -27,7 +27,7 @@ private:
 	// Single instance structures
 	thread_scheduler_t *scheduler;
 	mem_hier_handle_t *mem_hier;
-    mem_driver_t *mem_driver;
+    	mem_driver_t *mem_driver;
 	string   config;
 	
 	config_t *config_db;  // todo, make per sequencer

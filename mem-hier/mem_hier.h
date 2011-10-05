@@ -99,7 +99,7 @@ public:
 
 	uint64 *get_l1_misses_to_bank(uint32 cpu_id);
 	void clear_l1_misses_to_bank(uint32 cpu_id);
-
+  	uint64 get_commits();
 private:
 	//dram_t *dram_ptr;
 	typedef dram_t<prot_t, msg_t> drampt;
@@ -220,6 +220,7 @@ private:
     group_counter_t *stat_thread_user_cycles;
 	histo_1d_t *stat_request_size;
 	histo_1d_t *stat_requesttime_histo;
+	histo_1d_t *stat_requesttime_histo2; //does not include l2 cache and downwards
     histo_1d_t *stat_instr_reqtime_histo;
     histo_1d_t *stat_data_reqtime_histo;
 	histo_1d_t *stat_vcpu_state_requesttime;

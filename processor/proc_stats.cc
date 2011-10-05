@@ -112,6 +112,7 @@ static double stat_mpki_fn(st_entry_t ** arr) {
 
 void 
 proc_stats_t::initialize_stats () {
+	page_flts 	      =	stats->COUNTER_BASIC("page faults", "# of tlb traps");
 	// sequencer
 
 	stat_fetched          = stats->COUNTER_BASIC ("fetched", 

@@ -256,7 +256,7 @@ chip_t::handle_simulation()
             total_commits += STAT_GET(tstat_l[1]->stat_commits);
 		
 	}
-	
+	//cout<<"total com:  "<<total_commits<<" gconf: "<<g_conf_run_user_commits<<endl;
 	if ((g_conf_run_commits && total_commits >= (uint64) g_conf_run_commits) ||
         (g_conf_run_user_commits && total_user_commits >= (uint64) g_conf_run_user_commits) ||
         (g_conf_run_cycles &&  g_cycles == (uint64) g_conf_run_cycles)) 

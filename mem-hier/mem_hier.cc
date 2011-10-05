@@ -164,6 +164,9 @@ mem_hier_t::init() {
 	stat_requesttime_histo = stats->HISTO_EXP2("request_time",
 											   "distribution of miss latencies",
 											   10,1,1);
+	stat_requesttime_histo2 = stats->HISTO_EXP2("request_time_no_cache",
+											   "distribution of miss latencies after L2 cache",
+											   10,1,18);
     stat_data_reqtime_histo = stats->HISTO_EXP2("data_request_time",
 											   "distribution of miss latencies (data)",
 											   10,1,1);
@@ -516,7 +519,8 @@ void mem_hier_t::handle_simulation()
         proc_stats_t *tstat = module_obj->chip->get_tstats(i);
         if (proc_commit) {
             tstat->stat_commits->inc_total(proc_commit);
-            stat_num_commits->inc_total(proc_commit);
+            //stat_num_commits->inc_total(proc_commit);
+            stat_num_commits->inc_total(1);
             if (SIM_cpu_privilege_level(vcpus[i]) == 0) {
                 stat_user_commits->inc_total(proc_commit);
                 stat_thread_user_commits->inc_total(proc_commit, i);
@@ -636,7 +640,12 @@ mem_hier_t::make_request(conf_object_t *cpu, mem_trans_t *trans)
     if (g_conf_optimize_stack_write && !trans->ifetch && trans->call_complete_request
         && stackheap_profile->stack_access(trans)) {
         ret = MemComplete;
-    } else if (trans->io_device) {
+    } 
+    else if (trans->hw_prefetch){
+//	cout<<"prefetch returned "<<endl;
+	ret = MemComplete;
+   }
+	else if (trans->io_device) {
 		ret = handle_io_dev_request(cpu, trans);
 	} else { 
 		ret = handle_proc_request(cpu, trans);
@@ -872,6 +881,9 @@ mem_hier_t::complete_stats(mem_trans_t *trans)
 	}
 	tick_t req_latency = external::get_current_cycle() - trans->request_time;
 	stat_requesttime_histo->inc_total(1, req_latency);
+	if (req_latency > 18)
+		stat_requesttime_histo2->inc_total(1, req_latency);
+		
     if (trans->ifetch)
         stat_instr_reqtime_histo->inc_total(1, req_latency);
     else
@@ -1287,4 +1299,18 @@ void mem_hier_t::clear_l1_misses_to_bank(uint32 cpu_id)
 {
 	bzero(l1_misses_to_bank[cpu_id], (sizeof(uint64) * g_conf_l2_banks));
 	bzero(l2_misses_to_bank[cpu_id], (sizeof(uint64) * g_conf_l2_banks));
+}
+
+uint64 mem_hier_t::get_commits(){
+	//return STAT_GET(stat_num_commits);
+	uint64 total_commits=0;
+	for (uint32 i=0; i < num_threads;i++){
+           if (ptr()->is_initialized){
+		  proc_stats_t **tstat_l = ptr()->get_module_obj()->chip->get_tstats_list(i);
+		  total_commits += STAT_GET(tstat_l[0]->stat_commits);
+	   	  //return STAT_GET(tstat_l[0]->stat_user_commits);
+	   }
+	}
+		  return total_commits;
+                //return STAT_GET(ptr()->get_module_obj()->chip->tstats_list[0]->stat_commits);
 }

@@ -489,6 +489,7 @@ mai_t::get_npc () {
 
 void mai_t::break_sim (tick_t when) {
 	ASSERT (when >= 0);
+	//SIM_break_message("instruction commit reached");
 	SIM_break_cycle (cpu, when);	
 }
 

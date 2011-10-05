@@ -18,6 +18,10 @@ CONF_V_INTEGER (max_issue, "# of instructions to issue", 4)
 CONF_V_INTEGER (max_commit, "# of instructions to commit", 4)
 
 CONF_V_BOOL (kernel_params, "separate kernel params", false)
+CONF_V_BOOL (dmbr, "dmbr policy", false)
+CONF_V_BOOL (DMAPSE, "DMA Policy, Page or Cache Line Size", true)
+CONF_V_BOOL (no_add_latency, "if there is no additional latency for dmbr", false)
+
 
 CONF_V_INTEGER (yags_choice_bits, "# of choice bits for YAGS", 14)
 CONF_V_INTEGER (yags_exception_bits, "# of exception bits for YAGS", 12)

@@ -2162,6 +2162,7 @@ dynamic_instr_t::commit_stats () {
 		STAT_SET (tstats0->stat_syscall_start, p->get_g_cycles());
  		seq->potential_thread_switch(tid, YIELD_PAGE_FAULT);
 		page_fault = true;
+		STAT_INC(tstats0->page_flts);
 	}
 	
 	if ( opcode == i_retry || opcode == i_done || 

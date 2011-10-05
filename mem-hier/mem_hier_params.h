@@ -6,6 +6,8 @@ CONF_V_STRING(memory_topology, "mem topology and protocol", "cmp_incl")
 CONF_V_BOOL(hasdram, "uses dram", true)
 CONF_V_INTEGER(num_controllers,"number of memory controllers",4)
 
+CONF_V_INTEGER(dram_warmup,"number of instructions committed before DRAMsim starts counting latency",1000000)
+
 // Not all cache params below are used for all protocols/configs
 CONF_V_INTEGER(l1d_latency, "L1D hit latency", 1)
 CONF_V_INTEGER(l1d_assoc, "L1D associativity", 2)

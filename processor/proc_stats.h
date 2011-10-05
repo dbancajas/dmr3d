@@ -16,6 +16,8 @@ public:
 	// stats
 	stats_t *stats;
 
+	st_entry_t *page_flts;//counter for page faults
+
 	// sequencer
 	base_counter_t *stat_commits;
 	base_counter_t *stat_last_commits;
