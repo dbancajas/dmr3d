@@ -87,7 +87,9 @@ template <class prot_sm_t, class msg_t>
 void
 dram_t<prot_sm_t,msg_t>::printStats(){
 	mem->printStats(true);
-	//cout<<"total commits:"<<mem_hier_t::ptr()->get_commits()<<endl;
+	cout<<"total commits:"<<mem_hier_t::ptr()->get_commits()<<endl;
+	//STAT_INC(stat_commits,(uint32)mem_hier_t::ptr()->get_commits-STAT_GET(stat_commits));
+	STAT_INC(stat_commits,mem_hier_t::ptr()->get_commits() - STAT_GET(stat_commits));
 }
 
 

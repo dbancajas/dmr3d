@@ -641,10 +641,10 @@ mem_hier_t::make_request(conf_object_t *cpu, mem_trans_t *trans)
         && stackheap_profile->stack_access(trans)) {
         ret = MemComplete;
     } 
-    else if (trans->hw_prefetch){
+    //else if (trans->hw_prefetch){
 //	cout<<"prefetch returned "<<endl;
-	ret = MemComplete;
-   }
+//	ret = MemComplete;
+    //}
 	else if (trans->io_device) {
 		ret = handle_io_dev_request(cpu, trans);
 	} else { 
