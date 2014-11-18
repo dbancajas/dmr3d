@@ -1077,6 +1077,7 @@ void
 mem_hier_t::clear_stats()
 {
 	stats->clear();
+
 	for (uint32 i = 0; i < num_devices; i++) {
 		devices[i]->clear_stats();
 	}
